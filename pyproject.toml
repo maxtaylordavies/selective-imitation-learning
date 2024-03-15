@@ -8,6 +8,7 @@ authors = ["Max Taylor-Davies <maxtaylordavies@gmail.com>"]
 python = "^3.10"
 pygame = "^2.5.2"
 gymnasium = "^0.29.1"
+torch = "^2.2.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

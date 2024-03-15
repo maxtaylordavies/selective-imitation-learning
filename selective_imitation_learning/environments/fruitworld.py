@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 from typing import Optional, Tuple, Union
+
 import gymnasium as gym
 import numpy as np
 import pygame
+
+from selective_imitation_learning.constants import ENV_CONSTANTS
 
 ObsType = np.ndarray
 ActionType = int
@@ -25,6 +28,7 @@ class FruitWorld(gym.Env):
         grid_size: int,
         fruits_per_type: int,
         preferences: np.ndarray,
+        max_steps: int = 10,
         render_mode=None,
     ):
         assert grid_size > 0, "Grid size must be positive"
@@ -34,6 +38,7 @@ class FruitWorld(gym.Env):
         self.grid_size = grid_size
         self.fruits_per_type = fruits_per_type
         self.preferences = preferences
+        self.max_steps = max_steps
         self.num_fruits = len(self.preferences)
         self.render_mode = render_mode
 
@@ -69,8 +74,12 @@ class FruitWorld(gym.Env):
                         self.fruits[i][j] = self._random_pos()  # regenerate fruit
                         break
 
+        # check for termination
+        self.steps_taken += 1
+        done = self.steps_taken >= self.max_steps
+
         self.obs = self._get_obs()
-        return self.obs, reward, False, False, {}
+        return self.obs, reward, done, False, {}
 
     def _get_new_pos(self, action: ActionType) -> Position:
         new_pos = Position(self.agent_pos.x, self.agent_pos.y)
@@ -93,6 +102,7 @@ class FruitWorld(gym.Env):
         super().reset(seed=seed, options=options)
 
         # initialise state
+        self.steps_taken = 0
         self.agent_pos = Position(0, 0)
         self.fruits = {}
         for i in range(self.num_fruits):
@@ -150,7 +160,7 @@ class FruitWorld(gym.Env):
                     elif obs[i, j] > 0:
                         pygame.draw.circle(
                             self.window,
-                            (255, 0, 0),
+                            ENV_CONSTANTS["fruit_colours"][obs[i, j] - 1],
                             (i * 50 + 25, j * 50 + 25),
                             20,
                         )
