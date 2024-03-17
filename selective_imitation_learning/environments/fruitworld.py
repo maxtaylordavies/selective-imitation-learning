@@ -20,6 +20,9 @@ class Position:
     def __eq__(self, __value: object) -> bool:
         return self.x == __value.x and self.y == __value.y
 
+    def __hash__(self) -> int:
+        return hash((self.x, self.y))
+
 
 possible_fruit_locs = []
 for i in [1, 3, 5]:
@@ -70,6 +73,10 @@ class FruitWorld(gym.Env):
         self.action_space = gym.spaces.Discrete(4)
 
     def step(self, action: ActionType) -> Tuple[ObsType, float, bool, bool, dict]:
+        print(self.fruits)
+        for i in self.fruits:
+            assert len(self.fruits[i]) == self.fruits_per_type
+
         # move agent
         new_pos = self._get_new_pos(action)
         moved = not np.all(new_pos == self.agent_pos)
@@ -120,9 +127,14 @@ class FruitWorld(gym.Env):
         # initialise state
         self.steps_taken = 0
         self.agent_pos = Position(3, 3)
-        self.fruits = {}
-        for i in range(len(self.preferences)):
-            self.fruits[i] = [self._random_pos() for _ in range(self.fruits_per_type)]
+        initial_fruit_positions = self.np_random.choice(
+            possible_fruit_locs,
+            size=(len(self.preferences), self.fruits_per_type),
+            replace=False,
+        )
+        self.fruits = {
+            i: initial_fruit_positions[i] for i in range(len(self.preferences))
+        }
 
         # return initial observation
         self.obs = self._get_obs()
@@ -135,21 +147,10 @@ class FruitWorld(gym.Env):
         pass
 
     def _random_pos(self) -> Position:
-        while True:
-            pos = possible_fruit_locs[
-                self._np_random.integers(0, len(possible_fruit_locs))
-            ]
-            if pos == self.agent_pos:
-                continue
-            for i in self.fruits:
-                for fruit_pos in self.fruits[i]:
-                    if pos == fruit_pos:
-                        continue
-            return pos
-            # x, y = self._np_random.integers(0, self.grid_size, size=(2,))
-            # pos = Position(x, y)
-            # if not exclude_agent or pos != self.agent_pos:
-            #     return pos
+        all_locs = set(possible_fruit_locs.copy()) - {self.agent_pos}
+        filled_locs = set([pos for fruit in self.fruits for pos in self.fruits[fruit]])
+        empty_locs = list(all_locs - filled_locs)
+        return empty_locs[self._np_random.integers(0, len(empty_locs))]
 
     def _get_obs(self):
         obs = np.zeros((self.grid_size, self.grid_size), dtype=np.int64)
