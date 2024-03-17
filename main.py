@@ -8,8 +8,8 @@ from selective_imitation_learning.environments.fruitworld import FruitWorld
 seed = 0
 env = gym.make(
     "FruitWorld-v0",
-    grid_size=10,
-    fruits_per_type=2,
+    grid_size=5,
+    fruits_per_type=1,
     preferences=np.array([0.8, 0.1, 0.1]),
     max_steps=50,
     render_mode="human",

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import gymnasium as gym
+from gymnasium.utils import seeding
 import numpy as np
 import pygame
 
@@ -20,6 +21,12 @@ class Position:
         return self.x == __value.x and self.y == __value.y
 
 
+possible_fruit_locs = []
+for i in [1, 3, 5]:
+    for j in [1, 3, 5]:
+        possible_fruit_locs.append(Position(i, j))
+
+
 class FruitWorld(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
@@ -33,13 +40,14 @@ class FruitWorld(gym.Env):
     ):
         assert grid_size > 0, "Grid size must be positive"
         assert fruits_per_type > 0, "Number of fruits per type must be positive"
-        assert np.sum(preferences) == 1.0, "Fruit preference vector must sum to 1"
+        assert np.isclose(
+            np.sum(preferences), 1.0
+        ), "Fruit preference vector must sum to 1"
 
         self.grid_size = grid_size
         self.fruits_per_type = fruits_per_type
         self.preferences = preferences
         self.max_steps = max_steps
-        self.num_fruits = len(self.preferences)
         self.render_mode = render_mode
 
         """
@@ -54,29 +62,34 @@ class FruitWorld(gym.Env):
 
         # Define observation and action spaces
         self.observation_space = gym.spaces.Box(
-            low=-1, high=self.num_fruits, shape=(grid_size, grid_size), dtype=np.int64
+            low=-1,
+            high=len(self.preferences),
+            shape=(grid_size, grid_size),
+            dtype=np.int64,
         )
-        self.action_space = gym.spaces.Discrete(5)
+        self.action_space = gym.spaces.Discrete(4)
 
     def step(self, action: ActionType) -> Tuple[ObsType, float, bool, bool, dict]:
         # move agent
         new_pos = self._get_new_pos(action)
         moved = not np.all(new_pos == self.agent_pos)
-        reward = -0.1 if moved else 0
         self.agent_pos = new_pos
+
+        reward, done = -0.1 if moved else 0, False
 
         # check for fruit consumption
         if moved:
-            for i in range(self.num_fruits):
+            for i in self.fruits:
                 for j, fruit_pos in enumerate(self.fruits[i]):
-                    if new_pos == fruit_pos:
-                        reward += self.preferences[i] * 10
+                    if self.agent_pos == fruit_pos:
+                        reward += self.preferences[i] * 20  # eat fruit
                         self.fruits[i][j] = self._random_pos()  # regenerate fruit
                         break
 
         # check for termination
         self.steps_taken += 1
-        done = self.steps_taken >= self.max_steps
+        if self.steps_taken >= self.max_steps:
+            done = True
 
         self.obs = self._get_obs()
         return self.obs, reward, done, False, {}
@@ -99,13 +112,16 @@ class FruitWorld(gym.Env):
         options: Optional[dict] = None,
     ) -> Tuple[ObsType, dict]:
         # seed
-        super().reset(seed=seed, options=options)
+        if seed:
+            self._np_random, _ = seeding.np_random(seed)
+        else:
+            self._np_random, _ = seeding.np_random()
 
         # initialise state
         self.steps_taken = 0
-        self.agent_pos = Position(0, 0)
+        self.agent_pos = Position(3, 3)
         self.fruits = {}
-        for i in range(self.num_fruits):
+        for i in range(len(self.preferences)):
             self.fruits[i] = [self._random_pos() for _ in range(self.fruits_per_type)]
 
         # return initial observation
@@ -119,13 +135,26 @@ class FruitWorld(gym.Env):
         pass
 
     def _random_pos(self) -> Position:
-        x, y = np.random.randint(0, self.grid_size, size=(2,))
-        return Position(x, y)
+        while True:
+            pos = possible_fruit_locs[
+                self._np_random.integers(0, len(possible_fruit_locs))
+            ]
+            if pos == self.agent_pos:
+                continue
+            for i in self.fruits:
+                for fruit_pos in self.fruits[i]:
+                    if pos == fruit_pos:
+                        continue
+            return pos
+            # x, y = self._np_random.integers(0, self.grid_size, size=(2,))
+            # pos = Position(x, y)
+            # if not exclude_agent or pos != self.agent_pos:
+            #     return pos
 
     def _get_obs(self):
         obs = np.zeros((self.grid_size, self.grid_size), dtype=np.int64)
         obs[self.agent_pos.y, self.agent_pos.x] = -1
-        for i in range(self.num_fruits):
+        for i in self.fruits:
             for fruit_pos in self.fruits[i]:
                 obs[fruit_pos.y, fruit_pos.x] = i + 1
         return obs
