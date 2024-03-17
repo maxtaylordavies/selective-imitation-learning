@@ -24,12 +24,6 @@ class Position:
         return hash((self.x, self.y))
 
 
-possible_fruit_locs = []
-for i in [1, 3, 5]:
-    for j in [1, 3, 5]:
-        possible_fruit_locs.append(Position(i, j))
-
-
 class FruitWorld(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
@@ -52,16 +46,16 @@ class FruitWorld(gym.Env):
         self.preferences = preferences
         self.max_steps = max_steps
         self.render_mode = render_mode
-
-        """
-        if human-rendering is used, `self.window` will be a reference
-        to the window that we draw to. `self.clock` will be a clock that is used
-        to ensure that the environment is rendered at the correct framerate in
-        human-mode. they will remain `None` until human-mode is used for the
-        first time.
-        """
         self.window = None
         self.clock = None
+
+        self.possible_fruit_locs = np.array(
+            [
+                Position(x, y)
+                for x in range(1, grid_size - 1, 2)
+                for y in range(1, grid_size - 1, 2)
+            ]
+        )
 
         # Define observation and action spaces
         self.observation_space = gym.spaces.Box(
@@ -73,7 +67,6 @@ class FruitWorld(gym.Env):
         self.action_space = gym.spaces.Discrete(4)
 
     def step(self, action: ActionType) -> Tuple[ObsType, float, bool, bool, dict]:
-        print(self.fruits)
         for i in self.fruits:
             assert len(self.fruits[i]) == self.fruits_per_type
 
@@ -128,7 +121,7 @@ class FruitWorld(gym.Env):
         self.steps_taken = 0
         self.agent_pos = Position(3, 3)
         initial_fruit_positions = self.np_random.choice(
-            possible_fruit_locs,
+            self.possible_fruit_locs,
             size=(len(self.preferences), self.fruits_per_type),
             replace=False,
         )
@@ -147,7 +140,7 @@ class FruitWorld(gym.Env):
         pass
 
     def _random_pos(self) -> Position:
-        all_locs = set(possible_fruit_locs.copy()) - {self.agent_pos}
+        all_locs = set(self.possible_fruit_locs.copy()) - {self.agent_pos}
         filled_locs = set([pos for fruit in self.fruits for pos in self.fruits[fruit]])
         empty_locs = list(all_locs - filled_locs)
         return empty_locs[self._np_random.integers(0, len(empty_locs))]
