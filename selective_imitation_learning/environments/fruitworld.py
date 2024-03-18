@@ -50,26 +50,43 @@ class FruitWorld(gym.Env):
         self.clock = None
 
         self.possible_fruit_locs = np.array(
-            [
-                Position(x, y)
-                for x in range(1, grid_size - 1, 2)
-                for y in range(1, grid_size - 1, 2)
-            ]
+            [Position(x, y) for x in range(grid_size) for y in range(grid_size)]
         )
 
         # Define observation and action spaces
         self.observation_space = gym.spaces.Box(
-            low=-1,
-            high=len(self.preferences),
+            low=0,
+            high=1,
             shape=(grid_size, grid_size),
-            dtype=np.int64,
+            dtype=np.float32,
         )
         self.action_space = gym.spaces.Discrete(4)
 
-    def step(self, action: ActionType) -> Tuple[ObsType, float, bool, bool, dict]:
-        for i in self.fruits:
-            assert len(self.fruits[i]) == self.fruits_per_type
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        options: Optional[dict] = None,
+    ) -> Tuple[ObsType, dict]:
+        # seed
+        self._np_random, _ = seeding.np_random(seed)
 
+        # initialise state
+        self.steps_taken = 0
+        self.agent_pos = Position(self.grid_size // 2, self.grid_size // 2)
+        initial_fruit_positions = self.np_random.choice(
+            self.possible_fruit_locs,
+            size=(len(self.preferences), self.fruits_per_type),
+            replace=False,
+        )
+        self.fruits = {
+            i: initial_fruit_positions[i] for i in range(len(self.preferences))
+        }
+        self.consumed_counts = [0] * len(self.preferences)
+
+        # return initial observation
+        return self._get_obs(), {}
+
+    def step(self, action: ActionType) -> Tuple[ObsType, float, bool, bool, dict]:
         # move agent
         new_pos = self._get_new_pos(action)
         moved = not np.all(new_pos == self.agent_pos)
@@ -83,6 +100,7 @@ class FruitWorld(gym.Env):
                 for j, fruit_pos in enumerate(self.fruits[i]):
                     if self.agent_pos == fruit_pos:
                         reward += self.preferences[i] * 20  # eat fruit
+                        self.consumed_counts[i] += 1
                         self.fruits[i][j] = self._random_pos()  # regenerate fruit
                         break
 
@@ -91,8 +109,8 @@ class FruitWorld(gym.Env):
         if self.steps_taken >= self.max_steps:
             done = True
 
-        self.obs = self._get_obs()
-        return self.obs, reward, done, False, {}
+        info = {"consumed_counts": self.consumed_counts} if done else {}
+        return self._get_obs(), reward, done, False, info
 
     def _get_new_pos(self, action: ActionType) -> Position:
         new_pos = Position(self.agent_pos.x, self.agent_pos.y)
@@ -105,33 +123,6 @@ class FruitWorld(gym.Env):
         elif action == 3:  # right
             new_pos.x = min(self.grid_size - 1, new_pos.x + 1)
         return new_pos
-
-    def reset(
-        self,
-        seed: Optional[int] = None,
-        options: Optional[dict] = None,
-    ) -> Tuple[ObsType, dict]:
-        # seed
-        if seed:
-            self._np_random, _ = seeding.np_random(seed)
-        else:
-            self._np_random, _ = seeding.np_random()
-
-        # initialise state
-        self.steps_taken = 0
-        self.agent_pos = Position(3, 3)
-        initial_fruit_positions = self.np_random.choice(
-            self.possible_fruit_locs,
-            size=(len(self.preferences), self.fruits_per_type),
-            replace=False,
-        )
-        self.fruits = {
-            i: initial_fruit_positions[i] for i in range(len(self.preferences))
-        }
-
-        # return initial observation
-        self.obs = self._get_obs()
-        return self.obs, {}
 
     def render(self):
         self._render_frame()
@@ -146,12 +137,14 @@ class FruitWorld(gym.Env):
         return empty_locs[self._np_random.integers(0, len(empty_locs))]
 
     def _get_obs(self):
-        obs = np.zeros((self.grid_size, self.grid_size), dtype=np.int64)
+        obs = np.zeros((self.grid_size, self.grid_size), dtype=np.float32)
         obs[self.agent_pos.y, self.agent_pos.x] = -1
         for i in self.fruits:
             for fruit_pos in self.fruits[i]:
                 obs[fruit_pos.y, fruit_pos.x] = i + 1
-        return obs
+
+        # normalise
+        return (obs + 1) / (len(self.preferences) + 1)
 
     def _render_frame(self):
         if self.render_mode == "human":
@@ -164,7 +157,6 @@ class FruitWorld(gym.Env):
                 self.clock = pygame.time.Clock()
 
             self.window.fill((255, 255, 255))
-            obs = self.obs.T
             for i in range(self.grid_size):
                 for j in range(self.grid_size):
                     pygame.draw.rect(
@@ -173,19 +165,20 @@ class FruitWorld(gym.Env):
                         (i * 50, j * 50, 50, 50),
                         2,
                     )
-                    if obs[i, j] == -1:
-                        pygame.draw.rect(
-                            self.window,
-                            (0, 0, 0),
-                            (i * 50, j * 50, 50, 50),
-                            50,
-                        )
-                    elif obs[i, j] > 0:
-                        pygame.draw.circle(
-                            self.window,
-                            ENV_CONSTANTS["fruit_colours"][obs[i, j] - 1],
-                            (i * 50 + 25, j * 50 + 25),
-                            20,
-                        )
+            pygame.draw.rect(
+                self.window,
+                (0, 0, 0),
+                (self.agent_pos.x * 50, self.agent_pos.y * 50, 50, 50),
+                50,
+            )
+            for i in self.fruits:
+                for fruit_pos in self.fruits[i]:
+                    pygame.draw.circle(
+                        self.window,
+                        ENV_CONSTANTS["fruit_colours"][i],
+                        (fruit_pos.x * 50 + 25, fruit_pos.y * 50 + 25),
+                        20,
+                    )
+
             pygame.display.flip()
             self.clock.tick(10)
