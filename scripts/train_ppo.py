@@ -14,18 +14,22 @@ run_name = "test"
 seed = 0
 env_id = "FruitWorld-v0"
 env_kwargs = {
-    "grid_size": 5,
+    "grid_size": 7,
     "fruits_per_type": 1,
     "preferences": np.array([1.0, 0.0, 0.0]),
+    "fruit_loc_means": np.array([[1, 1], [1, 5], [5, 3]]),
+    "fruit_loc_stds": np.array([2.0, 2.0, 2.0]),
     "max_steps": 50,
     "render_mode": "human",
 }
+model_kwargs = {"learning_rate": 5e-4}
 
 train_ppo_agent(
     run_name=run_name,
     env_id=env_id,
     env_kwargs=env_kwargs,
-    train_steps=int(1e5),
+    model_kwargs=model_kwargs,
+    train_steps=int(3e6),
     resume=True,
 )
 

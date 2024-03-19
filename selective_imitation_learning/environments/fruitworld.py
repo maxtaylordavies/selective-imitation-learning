@@ -4,6 +4,7 @@ from typing import Optional, Tuple, Union
 import gymnasium as gym
 from gymnasium.utils import seeding
 import numpy as np
+from numpy.core.defchararray import replace
 import pygame
 
 from selective_imitation_learning.constants import ENV_CONSTANTS
@@ -23,6 +24,13 @@ class Position:
     def __hash__(self) -> int:
         return hash((self.x, self.y))
 
+    # a bit cheeky - we override subtraction operator to return manhattan distance
+    def __sub__(self, other: "Position") -> int:
+        return abs(self.x - other.x) + abs(self.y - other.y)
+
+    def to_np_idx(self) -> Tuple[int, int]:
+        return (self.y, self.x)
+
 
 class FruitWorld(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -32,26 +40,38 @@ class FruitWorld(gym.Env):
         grid_size: int,
         fruits_per_type: int,
         preferences: np.ndarray,
+        fruit_loc_means: Optional[np.ndarray] = None,
+        fruit_loc_stds: Optional[np.ndarray] = None,
+        base_fruit_reward: float = 20.0,
+        step_cost: float = 0.1,
+        num_lava: int = 0,
         max_steps: int = 10,
         render_mode=None,
     ):
         assert grid_size > 0, "Grid size must be positive"
         assert fruits_per_type > 0, "Number of fruits per type must be positive"
-        assert np.isclose(
-            np.sum(preferences), 1.0
-        ), "Fruit preference vector must sum to 1"
+        assert num_lava >= 0, "Number of lava cells must be non-negative"
+        assert max_steps > 0, "Maximum number of steps must be positive"
+        assert len(preferences) > 0, "Fruit preference vector must be non-empty"
+        assert (
+            fruits_per_type * len(preferences)
+        ) + num_lava < grid_size**2, "Number of fruits and lava cells exceeds grid size"
 
         self.grid_size = grid_size
         self.fruits_per_type = fruits_per_type
         self.preferences = preferences
+        self.fruit_loc_means = fruit_loc_means
+        self.fruit_loc_stds = fruit_loc_stds
+        self.num_fruit_types = len(preferences)
+        self.base_fruit_reward = base_fruit_reward
+        self.step_cost = step_cost
+        self.num_lava = num_lava
         self.max_steps = max_steps
         self.render_mode = render_mode
         self.window = None
         self.clock = None
 
-        self.possible_fruit_locs = np.array(
-            [Position(x, y) for x in range(grid_size) for y in range(grid_size)]
-        )
+        self._init_fruit_distributions()
 
         # Define observation and action spaces
         self.observation_space = gym.spaces.Box(
@@ -62,25 +82,52 @@ class FruitWorld(gym.Env):
         )
         self.action_space = gym.spaces.Discrete(4)
 
+    def _init_fruit_distributions(self):
+        self.fruit_probs = {}
+
+        row_idxs, col_idxs = np.indices((self.grid_size, self.grid_size))
+        coords = np.column_stack((row_idxs.ravel(), col_idxs.ravel()))
+
+        if self.fruit_loc_means is None:
+            self.fruit_loc_means = np.ones((self.num_fruit_types, 2))
+            self.fruit_loc_means *= self.grid_size // 2
+
+        if self.fruit_loc_stds is None:
+            self.fruit_loc_stds = np.ones(self.num_fruit_types)
+            self.fruit_loc_stds *= self.grid_size // 4
+
+        for i in range(len(self.preferences)):
+            sq_dists = np.sum((coords - self.fruit_loc_means[i]) ** 2, axis=1)
+            self.fruit_probs[i] = np.exp(-sq_dists / (2 * self.fruit_loc_stds[i] ** 2))
+            self.fruit_probs[i] /= self.fruit_probs[i].sum()
+
     def reset(
         self,
         seed: Optional[int] = None,
         options: Optional[dict] = None,
     ) -> Tuple[ObsType, dict]:
-        # seed
         self._np_random, _ = seeding.np_random(seed)
-
-        # initialise state
         self.steps_taken = 0
-        self.agent_pos = Position(self.grid_size // 2, self.grid_size // 2)
-        initial_fruit_positions = self.np_random.choice(
-            self.possible_fruit_locs,
-            size=(len(self.preferences), self.fruits_per_type),
-            replace=False,
-        )
-        self.fruits = {
-            i: initial_fruit_positions[i] for i in range(len(self.preferences))
-        }
+
+        # initialise agent position
+        x, y = self._np_random.choice(self.grid_size, size=2, replace=True)
+        self.agent_pos = Position(x, y)
+
+        # # initialise lava positions
+        # empty_cells = set(self.possible_locs) - {self.agent_pos}
+        # self.lava = self._np_random.choice(
+        #     list(empty_cells),
+        #     size=(self.num_lava,),
+        #     replace=False,
+        # )
+        #
+
+        # initialise fruit positions
+        self.fruit_map = -np.ones((self.grid_size, self.grid_size), dtype=int)
+        for i in range(self.num_fruit_types):
+            self._place_fruit(i, self.fruits_per_type)
+
+        # initialise consumed counts
         self.consumed_counts = [0] * len(self.preferences)
 
         # return initial observation
@@ -92,17 +139,20 @@ class FruitWorld(gym.Env):
         moved = not np.all(new_pos == self.agent_pos)
         self.agent_pos = new_pos
 
-        reward, done = -0.1 if moved else 0, False
+        reward, done = -self.step_cost if moved else 0, False
 
-        # check for fruit consumption
+        # check for lava-induced death or fruit consumption
         if moved:
-            for i in self.fruits:
-                for j, fruit_pos in enumerate(self.fruits[i]):
-                    if self.agent_pos == fruit_pos:
-                        reward += self.preferences[i] * 20  # eat fruit
-                        self.consumed_counts[i] += 1
-                        self.fruits[i][j] = self._random_pos()  # regenerate fruit
-                        break
+            # if self.agent_pos in self.lava:
+            #     done = True
+            # else:
+            pos_idx = self.agent_pos.to_np_idx()
+            fruit = self.fruit_map[pos_idx]
+            if fruit >= 0:
+                reward += float(self.preferences[fruit] * self.base_fruit_reward)
+                self.consumed_counts[fruit] += 1
+                self._place_fruit(fruit, 1)
+                self.fruit_map[pos_idx] = -1
 
         # check for termination
         self.steps_taken += 1
@@ -124,27 +174,26 @@ class FruitWorld(gym.Env):
             new_pos.x = min(self.grid_size - 1, new_pos.x + 1)
         return new_pos
 
-    def render(self):
-        self._render_frame()
+    def _place_fruit(self, fruit_type, n):
+        probs = self.fruit_probs[fruit_type].copy()
+        occ_rows, occ_cols = np.where(self.fruit_map >= 0)
+        probs[occ_rows * self.grid_size + occ_cols] = 0
+        idxs = self._np_random.choice(
+            self.grid_size**2,
+            size=(n,),
+            p=probs / probs.sum(),
+            replace=False,
+        )
+        self.fruit_map[np.unravel_index(idxs, (self.grid_size, self.grid_size))] = (
+            fruit_type
+        )
 
-    def close(self):
-        pass
-
-    def _random_pos(self) -> Position:
-        all_locs = set(self.possible_fruit_locs.copy()) - {self.agent_pos}
-        filled_locs = set([pos for fruit in self.fruits for pos in self.fruits[fruit]])
-        empty_locs = list(all_locs - filled_locs)
-        return empty_locs[self._np_random.integers(0, len(empty_locs))]
-
-    def _get_obs(self):
-        obs = np.zeros((self.grid_size, self.grid_size), dtype=np.float32)
-        obs[self.agent_pos.y, self.agent_pos.x] = -1
-        for i in self.fruits:
-            for fruit_pos in self.fruits[i]:
-                obs[fruit_pos.y, fruit_pos.x] = i + 1
-
-        # normalise
-        return (obs + 1) / (len(self.preferences) + 1)
+    def _get_obs(self, norm=True):
+        obs = self.fruit_map.copy().astype(np.float32) + 1
+        obs[self.agent_pos.to_np_idx()] = self.num_fruit_types + 1
+        if not norm:
+            return obs
+        return (obs - obs.min()) / (obs.max() - obs.min())
 
     def _render_frame(self):
         if self.render_mode == "human":
@@ -156,6 +205,8 @@ class FruitWorld(gym.Env):
             if self.clock is None:
                 self.clock = pygame.time.Clock()
 
+            obs = self._get_obs(norm=False).T
+
             self.window.fill((255, 255, 255))
             for i in range(self.grid_size):
                 for j in range(self.grid_size):
@@ -165,20 +216,26 @@ class FruitWorld(gym.Env):
                         (i * 50, j * 50, 50, 50),
                         2,
                     )
+                    if obs[i, j] > 0 and obs[i, j] <= self.num_fruit_types:
+                        pygame.draw.circle(
+                            self.window,
+                            ENV_CONSTANTS["fruit_colours"][int(obs[i, j] - 1)],
+                            (i * 50 + 25, j * 50 + 25),
+                            20,
+                        )
+
             pygame.draw.rect(
                 self.window,
                 (0, 0, 0),
                 (self.agent_pos.x * 50, self.agent_pos.y * 50, 50, 50),
                 50,
             )
-            for i in self.fruits:
-                for fruit_pos in self.fruits[i]:
-                    pygame.draw.circle(
-                        self.window,
-                        ENV_CONSTANTS["fruit_colours"][i],
-                        (fruit_pos.x * 50 + 25, fruit_pos.y * 50 + 25),
-                        20,
-                    )
 
             pygame.display.flip()
             self.clock.tick(10)
+
+    def render(self):
+        self._render_frame()
+
+    def close(self):
+        pass
