@@ -17,3 +17,14 @@ PPO_DEFAULT_HYPERPARAMS = {
     "learning_rate": 2.5e-4,
     "clip_range": 0.2,
 }
+
+DQN_DEFAULT_HYPERPARAMS = {
+    "learning_rate": 0.0000625,
+    "batch_size": 64,
+    "gamma": 0.99,
+    "exploration_initial_eps": 0.9,
+    "exploration_final_eps": 0.01,
+    "target_update_interval": 80,
+    "learning_starts": 10000,
+    "train_freq": 4,
+}

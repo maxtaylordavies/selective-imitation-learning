@@ -38,8 +38,9 @@ class FruitWorld(gym.Env):
     def __init__(
         self,
         grid_size: int,
-        fruits_per_type: int,
-        preferences: np.ndarray,
+        num_fruit: int,
+        fruit_preferences: np.ndarray,
+        fruit_type_probs: Optional[np.ndarray] = None,
         fruit_loc_means: Optional[np.ndarray] = None,
         fruit_loc_stds: Optional[np.ndarray] = None,
         base_fruit_reward: float = 20.0,
@@ -49,20 +50,21 @@ class FruitWorld(gym.Env):
         render_mode=None,
     ):
         assert grid_size > 0, "Grid size must be positive"
-        assert fruits_per_type > 0, "Number of fruits per type must be positive"
+        assert num_fruit > 0, "Number of fruits per type must be positive"
         assert num_lava >= 0, "Number of lava cells must be non-negative"
         assert max_steps > 0, "Maximum number of steps must be positive"
-        assert len(preferences) > 0, "Fruit preference vector must be non-empty"
+        assert len(fruit_preferences) > 0, "Fruit preference vector must be non-empty"
         assert (
-            fruits_per_type * len(preferences)
-        ) + num_lava < grid_size**2, "Number of fruits and lava cells exceeds grid size"
+            num_fruit + num_lava < grid_size**2
+        ), "Number of fruits and lava cells exceeds grid size"
 
         self.grid_size = grid_size
-        self.fruits_per_type = fruits_per_type
-        self.preferences = preferences
+        self.num_fruit = num_fruit
+        self.fruit_preferences = fruit_preferences
+        self.fruit_type_probs = fruit_type_probs
         self.fruit_loc_means = fruit_loc_means
         self.fruit_loc_stds = fruit_loc_stds
-        self.num_fruit_types = len(preferences)
+        self.num_fruit_types = len(fruit_preferences)
         self.base_fruit_reward = base_fruit_reward
         self.step_cost = step_cost
         self.num_lava = num_lava
@@ -88,6 +90,9 @@ class FruitWorld(gym.Env):
         row_idxs, col_idxs = np.indices((self.grid_size, self.grid_size))
         coords = np.column_stack((row_idxs.ravel(), col_idxs.ravel()))
 
+        if self.fruit_type_probs is None:
+            self.fruit_type_probs = np.ones(self.num_fruit_types) / self.num_fruit_types
+
         if self.fruit_loc_means is None:
             self.fruit_loc_means = np.ones((self.num_fruit_types, 2))
             self.fruit_loc_means *= self.grid_size // 2
@@ -96,7 +101,7 @@ class FruitWorld(gym.Env):
             self.fruit_loc_stds = np.ones(self.num_fruit_types)
             self.fruit_loc_stds *= self.grid_size // 4
 
-        for i in range(len(self.preferences)):
+        for i in range(len(self.fruit_preferences)):
             sq_dists = np.sum((coords - self.fruit_loc_means[i]) ** 2, axis=1)
             self.fruit_probs[i] = np.exp(-sq_dists / (2 * self.fruit_loc_stds[i] ** 2))
             self.fruit_probs[i] /= self.fruit_probs[i].sum()
@@ -124,11 +129,10 @@ class FruitWorld(gym.Env):
 
         # initialise fruit positions
         self.fruit_map = -np.ones((self.grid_size, self.grid_size), dtype=int)
-        for i in range(self.num_fruit_types):
-            self._place_fruit(i, self.fruits_per_type)
+        self._place_fruit(self.num_fruit)
 
         # initialise consumed counts
-        self.consumed_counts = [0] * len(self.preferences)
+        self.consumed_counts = [0] * len(self.fruit_preferences)
 
         # return initial observation
         return self._get_obs(), {}
@@ -149,9 +153,9 @@ class FruitWorld(gym.Env):
             pos_idx = self.agent_pos.to_np_idx()
             fruit = self.fruit_map[pos_idx]
             if fruit >= 0:
-                reward += float(self.preferences[fruit] * self.base_fruit_reward)
+                reward += float(self.fruit_preferences[fruit] * self.base_fruit_reward)
                 self.consumed_counts[fruit] += 1
-                self._place_fruit(fruit, 1)
+                self._place_fruit(1)
                 self.fruit_map[pos_idx] = -1
 
         # check for termination
@@ -174,19 +178,24 @@ class FruitWorld(gym.Env):
             new_pos.x = min(self.grid_size - 1, new_pos.x + 1)
         return new_pos
 
-    def _place_fruit(self, fruit_type, n):
-        probs = self.fruit_probs[fruit_type].copy()
-        occ_rows, occ_cols = np.where(self.fruit_map >= 0)
-        probs[occ_rows * self.grid_size + occ_cols] = 0
-        idxs = self._np_random.choice(
-            self.grid_size**2,
-            size=(n,),
-            p=probs / probs.sum(),
-            replace=False,
-        )
-        self.fruit_map[np.unravel_index(idxs, (self.grid_size, self.grid_size))] = (
-            fruit_type
-        )
+    def _place_fruit(self, n):
+        # first split n between fruit types according to self.fruit_type_probs
+        fruit_counts = self._np_random.multinomial(n, self.fruit_type_probs)
+
+        # then sample locations for each fruit type
+        for fruit_type, count in enumerate(fruit_counts):
+            probs = self.fruit_probs[fruit_type].copy()
+            occ_rows, occ_cols = np.where(self.fruit_map >= 0)
+            probs[occ_rows * self.grid_size + occ_cols] = 0
+            idxs = self._np_random.choice(
+                self.grid_size**2,
+                size=count,
+                p=probs / probs.sum(),
+                replace=False,
+            )
+            self.fruit_map[np.unravel_index(idxs, (self.grid_size, self.grid_size))] = (
+                fruit_type
+            )
 
     def _get_obs(self, norm=True):
         obs = self.fruit_map.copy().astype(np.float32) + 1
