@@ -7,6 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+from stable_baselines3 import PPO, DQN
+from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
 from stable_baselines3.common.vec_env import (
@@ -16,106 +18,20 @@ from stable_baselines3.common.vec_env import (
     is_vecenv_wrapped,
     sync_envs_normalization,
 )
-from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.logger import Logger
 
-
-def evaluate_policy(
-    model: "type_aliases.PolicyPredictor",
-    env: Union[gym.Env, VecEnv],
-    n_eval_episodes: int = 10,
-    deterministic: bool = True,
-    render: bool = False,
-    warn: bool = True,
-) -> Tuple[List[float], List[int], List[List[int]]]:
-    """
-    Runs policy for ``n_eval_episodes`` episodes and returns average reward.
-    If a vector env is passed in, this divides the episodes to evaluate onto the
-    different elements of the vector env. This static division of work is done to
-    remove bias. See https://github.com/DLR-RM/stable-baselines3/issues/402 for more
-    details and discussion.
-
-    .. note::
-        If environment has not been wrapped with ``Monitor`` wrapper, reward and
-        episode lengths are counted as it appears with ``env.step`` calls. If
-        the environment contains wrappers that modify rewards or episode lengths
-        (e.g. reward scaling, early episode reset), these will affect the evaluation
-        results as well. You can avoid this by wrapping environment with ``Monitor``
-        wrapper before anything else.
-
-    :param model: The RL agent you want to evaluate. This can be any object
-        that implements a `predict` method, such as an RL algorithm (``BaseAlgorithm``)
-        or policy (``BasePolicy``).
-    :param env: The gym environment or ``VecEnv`` environment.
-    :param n_eval_episodes: Number of episode to evaluate the agent
-    :param deterministic: Whether to use deterministic or stochastic actions
-    :param render: Whether to render the environment or not
-    :param warn: If True (default), warns user about lack of a Monitor wrapper in the
-        evaluation environment.
-    :return: Mean reward per episode, std of reward per episode.
-        Returns ([float], [int]) when ``return_episode_rewards`` is True, first
-        list containing per-episode rewards and second containing per-episode lengths
-        (in number of steps).
-    """
-    if not isinstance(env, VecEnv):
-        env = DummyVecEnv([lambda: env])  # type: ignore[list-item, return-value]
-    is_monitor_wrapped = (
-        is_vecenv_wrapped(env, VecMonitor) or env.env_is_wrapped(Monitor)[0]
-    )
-
-    n_envs = env.num_envs
-    episode_rewards = []
-    episode_lengths = []
-    consumed_counts = []
-
-    # divide episodes among different sub environments in the vector as evenly as possible
-    episode_counts = np.zeros(n_envs, dtype="int")
-    episode_count_targets = np.array(
-        [(n_eval_episodes + i) // n_envs for i in range(n_envs)], dtype="int"
-    )
-
-    current_rewards, current_lengths = np.zeros(n_envs), np.zeros(n_envs, dtype="int")
-    observations, states = env.reset(), None
-    episode_starts = np.ones((env.num_envs,), dtype=bool)
-
-    while (episode_counts < episode_count_targets).any():
-        actions, states = model.predict(
-            observations,  # type: ignore[arg-type]
-            state=states,
-            episode_start=episode_starts,
-            deterministic=deterministic,
-        )
-        new_observations, rewards, dones, infos = env.step(actions)
-        current_rewards += rewards
-        current_lengths += 1
-        for i in range(n_envs):
-            if episode_counts[i] < episode_count_targets[i]:
-                episode_starts[i] = dones[i]
-                if dones[i]:
-                    if is_monitor_wrapped:
-                        if "episode" in infos[i].keys():
-                            episode_rewards.append(infos[i]["episode"]["r"])
-                            episode_lengths.append(infos[i]["episode"]["l"])
-                            episode_counts[i] += 1
-                    else:
-                        episode_rewards.append(current_rewards[i])
-                        episode_lengths.append(current_lengths[i])
-                        episode_counts[i] += 1
-
-                    current_rewards[i] = 0
-                    current_lengths[i] = 0
-
-                    if "consumed_counts" in infos[i].keys():
-                        consumed_counts.append(infos[i]["consumed_counts"])
-
-        observations = new_observations
-        if render:
-            env.render()
-
-    return episode_rewards, episode_lengths, consumed_counts
+from selective_imitation_learning.environments.fruitworld import FruitWorld
+from selective_imitation_learning.constants import (
+    PPO_DEFAULT_HYPERPARAMS,
+    DQN_DEFAULT_HYPERPARAMS,
+)
 
 
-class CustomEvalCallback(EvalCallback):
+algos = {"ppo": PPO, "dqn": DQN}
+hyperparam_defaults = {"ppo": PPO_DEFAULT_HYPERPARAMS, "dqn": DQN_DEFAULT_HYPERPARAMS}
+
+
+class RLEvalCallback(EvalCallback):
     def __init__(
         self,
         eval_env: Union[gym.Env, VecEnv],
@@ -238,3 +154,87 @@ class CustomEvalCallback(EvalCallback):
                 continue_training = continue_training and self._on_event()
 
         return continue_training
+
+
+def train_rl_agent(
+    run_name: str,
+    env_id: str,
+    env_kwargs: Dict,
+    algo_name: str,
+    model_kwargs: Optional[Dict] = None,
+    train_steps: int = int(1e6),
+    n_training_envs: int = 16,
+    n_eval_envs: int = 10,
+    train_seed: int = 0,
+    eval_seed: int = 0,
+    eval_freq: int = 20000,
+    n_eval_episodes: int = 50,
+    log_dir: str = "../checkpoints",
+    resume: bool = False,
+):
+    assert algo_name in algos, f"Algorithm {algo_name} not supported"
+
+    # create run directory if it doesn't exist
+    run_dir = os.path.join(log_dir, run_name)
+    os.makedirs(run_dir, exist_ok=True)
+
+    # create training and evaluation environments
+    train_env = make_vec_env(
+        env_id, n_envs=n_training_envs, seed=train_seed, env_kwargs=env_kwargs
+    )
+    eval_env = make_vec_env(
+        env_id, n_envs=n_eval_envs, seed=eval_seed, env_kwargs=env_kwargs
+    )
+
+    # load or create model
+    if resume:
+        model = algos[algo_name].load(os.path.join(run_dir, "final_model"), train_env)
+    else:
+        hparams = hyperparam_defaults[algo_name].copy()
+        if model_kwargs is not None:
+            hparams.update(model_kwargs)
+        model = algos[algo_name]("MlpPolicy", train_env, **hparams)
+
+    # create eval callback
+    eval_callback = RLEvalCallback(
+        eval_env,
+        best_model_save_path=run_dir,
+        log_path=run_dir,
+        eval_freq=max(eval_freq // n_training_envs, 1),
+        n_eval_episodes=n_eval_episodes,
+        deterministic=True,
+        render=False,
+        resume=resume,
+    )
+
+    # train model
+    model.learn(total_timesteps=train_steps, progress_bar=True, callback=eval_callback)
+
+    # save model
+    model.save(os.path.join(run_dir, "final_model"))
+
+
+def enjoy_rl_agent(
+    run_name: str,
+    env_id: str,
+    env_kwargs: Dict,
+    algo_name: str,
+    seed: int,
+    checkpoint: str = "best",
+    log_dir: str = "../checkpoints",
+) -> None:
+    assert algo_name in algos, f"Algorithm {algo_name} not supported"
+
+    env = make_vec_env(env_id, n_envs=1, seed=seed, env_kwargs=env_kwargs)
+    model = algos[algo_name].load(
+        os.path.join(log_dir, run_name, f"{checkpoint}_model.zip"), env=env
+    )
+
+    obs = env.reset()
+    while True:
+        action, _ = model.predict(obs, deterministic=True)
+        obs, _, _, infos = env.step(action)
+        for info in infos:
+            if "consumed_counts" in info.keys():
+                print(f"Consumed counts: {info['consumed_counts']}")
+        env.render("human")

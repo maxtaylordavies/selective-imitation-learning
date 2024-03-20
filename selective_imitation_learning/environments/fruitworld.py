@@ -40,11 +40,13 @@ class FruitWorld(gym.Env):
         grid_size: int,
         num_fruit: int,
         fruit_preferences: np.ndarray,
+        fruit_types_deterministic: bool = True,
         fruit_type_probs: Optional[np.ndarray] = None,
         fruit_loc_means: Optional[np.ndarray] = None,
         fruit_loc_stds: Optional[np.ndarray] = None,
-        base_fruit_reward: float = 20.0,
-        step_cost: float = 0.1,
+        base_fruit_reward: float = 10.0,
+        step_cost: float = 0.5,
+        # stationary_cost: float = 5.0,
         num_lava: int = 0,
         max_steps: int = 10,
         render_mode=None,
@@ -61,6 +63,7 @@ class FruitWorld(gym.Env):
         self.grid_size = grid_size
         self.num_fruit = num_fruit
         self.fruit_preferences = fruit_preferences
+        self.fruit_types_deterministic = fruit_types_deterministic
         self.fruit_type_probs = fruit_type_probs
         self.fruit_loc_means = fruit_loc_means
         self.fruit_loc_stds = fruit_loc_stds
@@ -75,6 +78,16 @@ class FruitWorld(gym.Env):
 
         self._init_fruit_distributions()
 
+        self.agent_start_positions = np.array(
+            [
+                Position(1, 1),
+                Position(1, self.grid_size - 2),
+                Position(self.grid_size - 2, 1),
+                Position(self.grid_size - 2, self.grid_size - 2),
+                # Position(self.grid_size // 2, self.grid_size // 2),
+            ]
+        )
+
         # Define observation and action spaces
         self.observation_space = gym.spaces.Box(
             low=0,
@@ -82,7 +95,7 @@ class FruitWorld(gym.Env):
             shape=(grid_size, grid_size),
             dtype=np.float32,
         )
-        self.action_space = gym.spaces.Discrete(4)
+        self.action_space = gym.spaces.Discrete(5)
 
     def _init_fruit_distributions(self):
         self.fruit_probs = {}
@@ -90,7 +103,7 @@ class FruitWorld(gym.Env):
         row_idxs, col_idxs = np.indices((self.grid_size, self.grid_size))
         coords = np.column_stack((row_idxs.ravel(), col_idxs.ravel()))
 
-        if self.fruit_type_probs is None:
+        if not self.fruit_types_deterministic and self.fruit_type_probs is None:
             self.fruit_type_probs = np.ones(self.num_fruit_types) / self.num_fruit_types
 
         if self.fruit_loc_means is None:
@@ -115,8 +128,9 @@ class FruitWorld(gym.Env):
         self.steps_taken = 0
 
         # initialise agent position
-        x, y = self._np_random.choice(self.grid_size, size=2, replace=True)
-        self.agent_pos = Position(x, y)
+        # x, y = self._np_random.choice(self.grid_size, size=2, replace=True)
+        # self.agent_pos = Position(x, y)
+        self.agent_pos = self._np_random.choice(self.agent_start_positions)
 
         # # initialise lava positions
         # empty_cells = set(self.possible_locs) - {self.agent_pos}
@@ -131,7 +145,7 @@ class FruitWorld(gym.Env):
         self.fruit_map = -np.ones((self.grid_size, self.grid_size), dtype=int)
         self._place_fruit(self.num_fruit)
 
-        # initialise consumed counts
+        # initialise counters
         self.consumed_counts = [0] * len(self.fruit_preferences)
 
         # return initial observation
@@ -155,7 +169,9 @@ class FruitWorld(gym.Env):
             if fruit >= 0:
                 reward += float(self.fruit_preferences[fruit] * self.base_fruit_reward)
                 self.consumed_counts[fruit] += 1
-                self._place_fruit(1)
+                self._place_fruit(
+                    1, fruit_type=fruit if self.fruit_types_deterministic else None
+                )
                 self.fruit_map[pos_idx] = -1
 
         # check for termination
@@ -178,9 +194,18 @@ class FruitWorld(gym.Env):
             new_pos.x = min(self.grid_size - 1, new_pos.x + 1)
         return new_pos
 
-    def _place_fruit(self, n):
-        # first split n between fruit types according to self.fruit_type_probs
-        fruit_counts = self._np_random.multinomial(n, self.fruit_type_probs)
+    def _place_fruit(self, n, fruit_type=None):
+        # first split n between fruit types
+        if fruit_type is not None:
+            fruit_counts = np.zeros(self.num_fruit_types, dtype=int)
+            fruit_counts[fruit_type] = n
+        elif self.fruit_types_deterministic:
+            assert n % self.num_fruit_types == 0
+            fruit_counts = np.full(
+                self.num_fruit_types, n // self.num_fruit_types, dtype=int
+            )
+        else:
+            fruit_counts = self._np_random.multinomial(n, self.fruit_type_probs)
 
         # then sample locations for each fruit type
         for fruit_type, count in enumerate(fruit_counts):
