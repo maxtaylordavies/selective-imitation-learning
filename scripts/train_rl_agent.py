@@ -3,7 +3,7 @@ import os
 
 import numpy as np
 
-from selective_imitation_learning.rl import (
+from selective_imitation_learning.learning import (
     train_rl_agent,
     plot_eval_curves,
     enjoy_rl_agent,
