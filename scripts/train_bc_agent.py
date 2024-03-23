@@ -11,7 +11,6 @@ from selective_imitation_learning.learning import (
     enjoy_policy,
 )
 
-# run_name = f"ppo_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 run_name = "test_bc"
 seed = 0
 env_id = "FruitWorld-v0"
@@ -25,13 +24,17 @@ env_kwargs = {
     "render_mode": "human",
 }
 
+
+expert_paths = [
+    f"../checkpoints/ppo/{colour}/best_model.zip" for colour in ("blue", "red")
+]
 train_bc_agent(
     run_name=run_name,
     env_id=env_id,
     env_kwargs=env_kwargs,
-    expert_model_path="../checkpoints/ppo/blue/best_model.zip",
+    expert_model_paths=expert_paths,
     min_timesteps=int(1e5),
-    train_epochs=5,
+    train_epochs=10,
 )
 
 plot_eval_curves(run_name, window_size=20)

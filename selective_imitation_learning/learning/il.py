@@ -1,6 +1,6 @@
 import os
 from struct import Struct
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import gymnasium as gym
 import numpy as np
@@ -15,7 +15,7 @@ from stable_baselines3.common.save_util import save_to_zip_file, load_from_zip_f
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.vec_env import VecEnv
 
-from .utils import generate_demo_transitions
+from .transitions import generate_demo_transitions
 from .callback import EvalCallback
 
 
@@ -65,10 +65,9 @@ def train_bc_agent(
     run_name: str,
     env_id: str,
     env_kwargs: Dict,
-    expert_model_path: str,
+    expert_model_paths: List[str],
     expert_algo: str = "ppo",
-    min_timesteps: Optional[int] = None,
-    min_episodes: Optional[int] = None,
+    min_timesteps: int = int(1e5),
     train_epochs: int = 1,
     n_training_envs: int = 16,
     n_eval_envs: int = 10,
@@ -90,14 +89,17 @@ def train_bc_agent(
 
     # generate expert demonstrations
     rng = np.random.default_rng(train_seed)
+    min_t_per_agent = min_timesteps // len(expert_model_paths)
     transitions = generate_demo_transitions(
         train_env,
-        expert_model_path,
         rng,
-        min_timesteps,
-        min_episodes,
+        expert_model_paths,
+        [],
+        min_t_per_agent,
         expert_algo,
     )
+
+    print(len(transitions))
 
     trainer = bc.BC(
         observation_space=train_env.observation_space,

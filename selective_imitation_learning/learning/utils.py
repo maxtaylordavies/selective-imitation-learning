@@ -26,30 +26,6 @@ from imitation.policies.serialize import load_policy as load_expert_policy
 from selective_imitation_learning.constants import ENV_CONSTANTS
 
 
-def generate_demo_transitions(
-    env: VecEnv,
-    model_path: str,
-    rng: np.random.Generator,
-    min_timesteps: Optional[int] = None,
-    min_episodes: Optional[int] = None,
-    algo_name="ppo",
-) -> types.Transitions:
-    assert (
-        min_timesteps is not None or min_episodes is not None
-    ), "Must specify min_timesteps or min_episodes"
-    expert = load_expert_policy(algo_name, env, path=model_path)
-    rollouts = rollout.rollout(
-        expert,
-        env,
-        rollout.make_sample_until(
-            min_timesteps=min_timesteps, min_episodes=min_episodes
-        ),
-        rng=rng,
-        unwrap=False,
-    )
-    return rollout.flatten_trajectories(rollouts)
-
-
 def plot_eval_curves(
     run_name: str, log_dir: str = "../checkpoints", window_size: int = 5
 ) -> None:

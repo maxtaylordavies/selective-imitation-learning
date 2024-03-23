@@ -102,29 +102,3 @@ def train_rl_agent(
 
     # save model
     model.save(os.path.join(run_dir, "final_model"))
-
-
-def enjoy_rl_agent(
-    run_name: str,
-    env_id: str,
-    env_kwargs: Dict,
-    algo_name: str,
-    seed: int,
-    checkpoint: str = "best",
-    log_dir: str = "../checkpoints",
-) -> None:
-    assert algo_name in algos, f"Algorithm {algo_name} not supported"
-
-    env = make_vec_env(env_id, n_envs=1, seed=seed, env_kwargs=env_kwargs)
-    model = algos[algo_name].load(
-        os.path.join(log_dir, run_name, f"{checkpoint}_model.zip"), env=env
-    )
-
-    obs = env.reset()
-    while True:
-        action, _ = model.predict(obs, deterministic=True)
-        obs, _, _, infos = env.step(action)
-        for info in infos:
-            if "consumed_counts" in info.keys():
-                print(f"Consumed counts: {info['consumed_counts']}")
-        env.render("human")
