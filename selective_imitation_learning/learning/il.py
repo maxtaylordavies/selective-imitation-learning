@@ -1,6 +1,16 @@
 import os
 from struct import Struct
-from typing import Dict, List, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+)
 
 import gymnasium as gym
 import numpy as np
@@ -15,7 +25,11 @@ from stable_baselines3.common.save_util import save_to_zip_file, load_from_zip_f
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.vec_env import VecEnv
 
-from .transitions import generate_demo_transitions
+from .data import (
+    MultiAgentTransitions,
+    generate_demonstrations,
+    make_data_loader,
+)
 from .callback import EvalCallback
 
 
@@ -23,6 +37,17 @@ def save_il_model(model: BasePolicy, path: str):
     pytorch_variables = {"policy": model}
     params_to_save = {"policy": model.state_dict()}
     save_to_zip_file(path, params=params_to_save, pytorch_variables=pytorch_variables)
+
+
+class SelectiveBC(bc.BC):
+    def __init__(self, *args, weight_fn: Optional[Callable] = None, **kwargs):
+        self.weight_fn = weight_fn
+        super().__init__(*args, **kwargs)
+
+    def set_demonstrations(self, demonstrations: MultiAgentTransitions) -> None:
+        self._demo_data_loader = make_data_loader(
+            demonstrations, self.minibatch_size, weight_fn=self.weight_fn
+        )
 
 
 class ILEvalCallback(EvalCallback):
@@ -62,16 +87,14 @@ class ILEvalCallback(EvalCallback):
 
 
 def train_bc_agent(
+    rng: np.random.Generator,
     run_name: str,
     env_id: str,
     env_kwargs: Dict,
-    expert_model_paths: List[str],
-    expert_algo: str = "ppo",
-    min_timesteps: int = int(1e5),
+    demonstrations: MultiAgentTransitions,
+    weight_fn: Optional[Callable] = None,
     train_epochs: int = 1,
-    n_training_envs: int = 16,
     n_eval_envs: int = 10,
-    train_seed: int = 0,
     eval_seed: int = 0,
     log_dir: str = "../checkpoints",
 ):
@@ -79,37 +102,20 @@ def train_bc_agent(
     run_dir = os.path.join(log_dir, run_name)
     os.makedirs(run_dir, exist_ok=True)
 
-    # create training and evaluation environments
-    train_env = make_vec_env(
-        env_id, n_envs=n_training_envs, seed=train_seed, env_kwargs=env_kwargs
-    )
-    eval_env = make_vec_env(
+    env = make_vec_env(
         env_id, n_envs=n_eval_envs, seed=eval_seed, env_kwargs=env_kwargs
     )
 
-    # generate expert demonstrations
-    rng = np.random.default_rng(train_seed)
-    min_t_per_agent = min_timesteps // len(expert_model_paths)
-    transitions = generate_demo_transitions(
-        train_env,
-        rng,
-        expert_model_paths,
-        [],
-        min_t_per_agent,
-        expert_algo,
-    )
-
-    print(len(transitions))
-
-    trainer = bc.BC(
-        observation_space=train_env.observation_space,
-        action_space=train_env.action_space,
-        demonstrations=transitions,
+    trainer = SelectiveBC(
+        observation_space=env.observation_space,
+        action_space=env.action_space,
+        demonstrations=demonstrations,
         rng=rng,
+        weight_fn=weight_fn,
     )
 
     callback = ILEvalCallback(
-        eval_env=eval_env,
+        eval_env=env,
         eval_freq=2000,
         n_eval_episodes=10,
         batch_size=trainer.batch_size,
