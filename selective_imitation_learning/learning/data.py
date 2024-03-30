@@ -7,6 +7,9 @@ from imitation.data import types, rollout
 from imitation.policies.serialize import load_policy as load_expert_policy
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.env_util import make_vec_env
+from tqdm import tqdm
+
+from .utils import load_policy
 
 
 @dataclasses.dataclass(frozen=True)
@@ -47,8 +50,9 @@ def generate_demonstrations(
     algo_name="ppo",
 ) -> MultiAgentTransitions:
     rollouts, agent_idxs = [], []
-    for i, agent_path in enumerate(agent_paths):
-        expert = load_expert_policy(algo_name, env, path=agent_path)
+    for i, agent_path in enumerate(tqdm(agent_paths)):
+        # expert = load_expert_policy(algo_name, env, path=agent_path)
+        expert = load_policy(agent_path)
         _rollouts = rollout.rollout(
             expert,
             env,

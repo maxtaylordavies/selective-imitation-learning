@@ -18,17 +18,17 @@ from stable_baselines3.common.vec_env import (
     sync_envs_normalization,
 )
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.save_util import load_from_zip_file
+from stable_baselines3.common.save_util import save_to_zip_file, load_from_zip_file
 from stable_baselines3.common.logger import Logger
 from imitation.data import types, rollout
 from imitation.policies.serialize import load_policy as load_expert_policy
 
 from selective_imitation_learning.constants import ENV_CONSTANTS
 
+sns.set_theme(style="darkgrid")
 
-def plot_eval_curves(
-    run_name: str, log_dir: str = "../checkpoints", window_size: int = 5
-) -> None:
+
+def load_eval_data(run_name: str, log_dir: str = "../checkpoints"):
     npzfile = np.load(os.path.join(log_dir, run_name, "evaluations.npz"))
     eval_returns = npzfile["results"]
     eval_steps = npzfile["timesteps"]
@@ -48,17 +48,32 @@ def plot_eval_curves(
                 consumed_data["consumed"].append(consumed)
                 consumed_data["env"].append(j)
 
-    # plot returns
-    return_df = pd.DataFrame(return_data)
-    return_df["return"] = return_df["return"].rolling(window_size).mean()
-    sns.lineplot(data=return_df, x="timestep", y="return")
-    plt.show()
+    return pd.DataFrame(return_data), pd.DataFrame(consumed_data)
 
-    # plot consumed counts
-    consumed_df = pd.DataFrame(consumed_data)
+
+def take_rolling_mean_of_eval_data(
+    return_df: pd.DataFrame, consumed_df: pd.DataFrame, window_size: int = 5
+) -> None:
+    if window_size <= 1:
+        return
+    return_df["return"] = return_df["return"].rolling(window_size).mean()
     consumed_df["consumed"] = consumed_df.groupby("fruit")["consumed"].transform(
         lambda x: x.rolling(window_size).mean()
     )
+
+
+def plot_eval_curves(
+    run_name: str, log_dir: str = "../checkpoints", window_size: int = 5
+) -> None:
+    return_df, consumed_df = load_eval_data(run_name=run_name, log_dir=log_dir)
+    take_rolling_mean_of_eval_data(return_df, consumed_df, window_size)
+
+    # plot returns
+    fig, axs = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
+    sns.lineplot(data=return_df, x="timestep", y="return", ax=axs[0])
+    axs[0].set_title("Mean eval return over training")
+
+    # plot consumed counts
     colours = np.array(ENV_CONSTANTS["fruit_colours"]) / 255
     sns.lineplot(
         data=consumed_df,
@@ -66,8 +81,17 @@ def plot_eval_curves(
         y="consumed",
         hue="fruit",
         palette=sns.color_palette(list(colours)),
+        ax=axs[1],
     )
+    axs[1].set_title("Mean eval fruit consumption over training")
+    fig.tight_layout()
     plt.show()
+
+
+def save_policy(model: BasePolicy, path: str):
+    pytorch_variables = {"policy": model}
+    params_to_save = {"policy": model.state_dict()}
+    save_to_zip_file(path, params=params_to_save, pytorch_variables=pytorch_variables)
 
 
 def load_policy(path: str) -> BasePolicy:

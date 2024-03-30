@@ -25,6 +25,7 @@ from selective_imitation_learning.constants import (
     DQN_DEFAULT_HYPERPARAMS,
 )
 from .callback import EvalCallback
+from .utils import save_policy
 
 
 algos = {"ppo": PPO, "dqn": DQN}
@@ -100,5 +101,5 @@ def train_rl_agent(
     # train model
     model.learn(total_timesteps=train_steps, progress_bar=True, callback=eval_callback)
 
-    # save model
-    model.save(os.path.join(run_dir, "final_model"))
+    # save final model
+    save_policy(model.policy, os.path.join(run_dir, "final_model"))

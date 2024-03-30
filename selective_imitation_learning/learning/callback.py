@@ -7,7 +7,7 @@ from stable_baselines3.common.callbacks import EvalCallback as _EvalCallback
 from stable_baselines3.common.vec_env import VecEnv
 from tqdm import tqdm
 
-from .utils import evaluate_policy
+from .utils import save_policy, evaluate_policy
 
 
 class EvalCallback(_EvalCallback):
@@ -49,7 +49,7 @@ class EvalCallback(_EvalCallback):
 
     def _run_eval(self):
         episode_rewards, episode_lengths, episode_consumed_counts = evaluate_policy(
-            self.model,
+            self.model.policy,
             self.eval_env,
             n_eval_episodes=self.n_eval_episodes,
             render=self.render,
@@ -94,4 +94,11 @@ class EvalCallback(_EvalCallback):
     def _save_best_model(self):
         if self.best_model_save_path is None:
             return
-        self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+        save_policy(
+            self.model.policy, os.path.join(self.best_model_save_path, "best_model")
+        )
+
+    # def _save_best_model(self):
+    #     if self.best_model_save_path is None:
+    #         return
+    #     self.model.save(os.path.join(self.best_model_save_path, "best_model"))
