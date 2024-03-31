@@ -9,16 +9,13 @@ from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.env_util import make_vec_env
 from tqdm import tqdm
 
-from .utils import load_policy
+from ..utils import load_policy
 
 
 @dataclasses.dataclass(frozen=True)
 class MultiAgentTransitions(types.Transitions):
     # array of agent indices - agent_idxs[i] is the index of the agent associated with transition i
     agent_idxs: np.ndarray
-
-    # list of info/metadata objects for each agent
-    agent_infos: List[Dict]
 
     def __post_init__(self):
         """Performs input validation: check shapes & dtypes match docstring."""
@@ -32,26 +29,27 @@ class MultiAgentTransitions(types.Transitions):
     def __getitem__(self, key):
         """See TransitionsMinimal docstring for indexing and slicing semantics."""
         d = types.dataclass_quick_asdict(self)
-        d_item = {k: v[key] for k, v in d.items() if k != "agent_infos"}
+        d_item = {k: v[key] for k, v in d.items()}
 
-        if isinstance(key, slice):
+        if not isinstance(key, int):
             return dataclasses.replace(self, **d_item)
         else:
-            assert isinstance(key, int)
             return d_item
+
+    def get_for_agent(self, agent: int):
+        indices = np.where(self.agent_idxs == agent)[0]
+        return self[indices]
 
 
 def generate_demonstrations(
     env: VecEnv,
     rng: np.random.Generator,
     agent_paths: List[str],
-    agent_infos: List[Dict] = [],
     min_timesteps_per_agent: int = int(1e5),
     algo_name="ppo",
 ) -> MultiAgentTransitions:
     rollouts, agent_idxs = [], []
     for i, agent_path in enumerate(tqdm(agent_paths)):
-        # expert = load_expert_policy(algo_name, env, path=agent_path)
         expert = load_policy(agent_path)
         _rollouts = rollout.rollout(
             expert,
@@ -65,11 +63,11 @@ def generate_demonstrations(
         rollouts += _rollouts
         agent_idxs += [i] * len(_rollouts)
 
-    return flatten_trajectories(rollouts, agent_idxs, agent_infos)
+    return flatten_trajectories(rollouts, agent_idxs)
 
 
 def flatten_trajectories(
-    trajectories: List[types.Trajectory], agent_idxs: List[int], agent_infos: List[dict]
+    trajectories: List[types.Trajectory], agent_idxs: List[int]
 ) -> MultiAgentTransitions:
 
     def all_of_type(key, desired_type):
@@ -107,59 +105,4 @@ def flatten_trajectories(
     lengths = set(map(len, cat_parts.values()))
     assert len(lengths) == 1, f"expected one length, got {lengths}"
 
-    return MultiAgentTransitions(**cat_parts, agent_infos=agent_infos)
-
-
-def make_data_loader(
-    transitions: MultiAgentTransitions,
-    batch_size: int,
-    weight_fn: Optional[Callable] = None,
-    data_loader_kwargs: Optional[Mapping[str, Any]] = None,
-) -> Iterable[types.TransitionMapping]:
-    """Converts demonstration data to Torch data loader.
-
-    Args:
-        transitions: Transitions expressed directly as a `types.TransitionsMinimal`
-            object, a sequence of trajectories, or an iterable of transition
-            batches (mappings from keywords to arrays containing observations, etc).
-        batch_size: The size of the batch to create. Does not change the batch size
-            if `transitions` is already an iterable of transition batches.
-        data_loader_kwargs: Arguments to pass to `th_data.DataLoader`.
-
-    Returns:
-        An iterable of transition batches.
-
-    Raises:
-        ValueError: if `transitions` is an iterable over transition batches with batch
-            size not equal to `batch_size`; or if `transitions` is transitions or a
-            sequence of trajectories with total timesteps less than `batch_size`.
-        TypeError: if `transitions` is an unsupported type.
-    """
-    assert batch_size > 0, f"Batch size must be positive, got {batch_size}."
-    assert (
-        len(transitions) >= batch_size
-    ), "Number of provided transitions cannot be smaller than batch size."
-
-    # define sample weights for WeightedRandomSampler
-    if weight_fn is None or len(transitions.agent_infos) == 0:
-        sample_weights = np.ones(len(transitions.agent_idxs))
-    else:
-        agent_weights = weight_fn(transitions.agent_infos).astype(np.float32)
-        sample_weights = agent_weights[transitions.agent_idxs]
-    print(type(sample_weights), type(sample_weights[0]))
-    sample_weights /= sample_weights.sum()
-
-    sampler = th_data.WeightedRandomSampler(sample_weights, len(sample_weights))
-
-    kwargs: Mapping[str, Any] = {
-        "drop_last": True,
-        **(data_loader_kwargs or {}),
-    }
-
-    return th_data.DataLoader(
-        transitions,
-        batch_size=batch_size,
-        sampler=sampler,
-        collate_fn=types.transitions_collate_fn,
-        **kwargs,
-    )
+    return MultiAgentTransitions(**cat_parts)

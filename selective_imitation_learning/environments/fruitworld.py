@@ -34,6 +34,7 @@ class Position:
 
 class FruitWorld(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
+    state_space: gym.Space
 
     def __init__(
         self,
@@ -95,6 +96,7 @@ class FruitWorld(gym.Env):
             shape=(grid_size, grid_size),
             dtype=np.float32,
         )
+        self.state_space = self.observation_space
         self.action_space = gym.spaces.Discrete(5)
 
     def _init_fruit_distributions(self):

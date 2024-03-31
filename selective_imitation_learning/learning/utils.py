@@ -18,7 +18,6 @@ from stable_baselines3.common.vec_env import (
     sync_envs_normalization,
 )
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.save_util import save_to_zip_file, load_from_zip_file
 from stable_baselines3.common.logger import Logger
 from imitation.data import types, rollout
 from imitation.policies.serialize import load_policy as load_expert_policy
@@ -86,24 +85,6 @@ def plot_eval_curves(
     axs[1].set_title("Mean eval fruit consumption over training")
     fig.tight_layout()
     plt.show()
-
-
-def save_policy(model: BasePolicy, path: str):
-    pytorch_variables = {"policy": model}
-    params_to_save = {"policy": model.state_dict()}
-    save_to_zip_file(path, params=params_to_save, pytorch_variables=pytorch_variables)
-
-
-def load_policy(path: str) -> BasePolicy:
-    _, params, pytorch_variables = load_from_zip_file(path)
-    assert pytorch_variables is not None, "No pytorch variables found in model file"
-    assert params is not None, "No parameters found in model file"
-    try:
-        policy = pytorch_variables["policy"]
-        policy.load_state_dict(params["policy"])
-        return policy
-    except:
-        raise ValueError("Failed to load policy")
 
 
 def evaluate_policy(

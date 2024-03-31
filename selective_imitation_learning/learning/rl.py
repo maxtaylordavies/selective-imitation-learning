@@ -25,7 +25,7 @@ from selective_imitation_learning.constants import (
     DQN_DEFAULT_HYPERPARAMS,
 )
 from .callback import EvalCallback
-from .utils import save_policy
+from ..utils import save_policy
 
 
 algos = {"ppo": PPO, "dqn": DQN}

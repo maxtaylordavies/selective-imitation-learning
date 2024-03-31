@@ -475,6 +475,61 @@ parallel = ["ray[debug,tune] (>=2.0.0,<2.1.0)"]
 test = ["black[jupyter] (>=22.6.0,<22.7.0)", "coverage (>=6.4.2,<6.5.0)", "codecov (>=2.1.12,<2.2.0)", "codespell (>=2.1.0,<2.2.0)", "darglint (>=1.8.1,<1.9.0)", "filelock (>=3.7.1,<3.8.0)", "flake8 (>=4.0.1,<4.1.0)", "flake8-blind-except (==0.2.1)", "flake8-builtins (>=1.5.3,<1.6.0)", "flake8-commas (>=2.1.0,<2.2.0)", "flake8-debugger (>=4.1.2,<4.2.0)", "flake8-docstrings (>=1.6.0,<1.7.0)", "flake8-isort (>=4.1.2,<4.2.0)", "hypothesis (>=6.54.1,<6.55.0)", "ipykernel (>=6.15.1,<6.16.0)", "jupyter (>=1.0.0,<1.1.0)", "jupyter-client (>=6.1.12,<6.2.0)", "moviepy (>=1.0.3,<1.1.0)", "mypy (>=0.990,<1.0)", "pandas (>=1.4.3,<1.5.0)", "pytest (>=7.1.2,<7.2.0)", "pytest-cov (>=3.0.0,<3.1.0)", "pytest-notebook (==0.8.0)", "pytest-timeout (>=2.1.0,<2.2.0)", "pytest-xdist (>=2.5.0,<2.6.0)", "scipy (>=1.9.0,<1.10.0)", "wandb (==0.12.21)", "setuptools-scm (>=7.0.5,<7.1.0)", "pre-commit (>=2.20.0)", "ray[debug,tune] (>=2.0.0,<2.1.0)", "seals[atari] (>=0.2.1,<0.3.0)", "pytype (==2023.9.27)"]
 
 [[package]]
+name = "jax"
+version = "0.4.25"
+description = "Differentiate, compile, and transform Numpy code."
+category = "main"
+optional = false
+python-versions = ">=3.9"
+
+[package.dependencies]
+ml-dtypes = ">=0.2.0"
+numpy = [
+    {version = ">=1.22", markers = "python_version < \"3.11\""},
+    {version = ">=1.23.2", markers = "python_version >= \"3.11\""},
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+]
+opt-einsum = "*"
+scipy = [
+    {version = ">=1.9", markers = "python_version < \"3.12\""},
+    {version = ">=1.11.1", markers = "python_version >= \"3.12\""},
+]
+
+[package.extras]
+australis = ["protobuf (>=3.13,<4)"]
+ci = ["jaxlib (==0.4.24)"]
+cpu = ["jaxlib (==0.4.25)"]
+cuda = ["jaxlib (==0.4.25+cuda11.cudnn86)"]
+cuda11_cudnn86 = ["jaxlib (==0.4.25+cuda11.cudnn86)"]
+cuda11_local = ["jaxlib (==0.4.25+cuda11.cudnn86)"]
+cuda11_pip = ["jaxlib (==0.4.25+cuda11.cudnn86)", "nvidia-cublas-cu11 (>=11.11)", "nvidia-cuda-cupti-cu11 (>=11.8)", "nvidia-cuda-nvcc-cu11 (>=11.8)", "nvidia-cuda-runtime-cu11 (>=11.8)", "nvidia-cudnn-cu11 (>=8.8)", "nvidia-cufft-cu11 (>=10.9)", "nvidia-cusolver-cu11 (>=11.4)", "nvidia-cusparse-cu11 (>=11.7)", "nvidia-nccl-cu11 (>=2.18.3)"]
+cuda12 = ["jaxlib (==0.4.25)", "jax-cuda12-plugin (==0.4.25)", "nvidia-cublas-cu12 (>=12.3.4.1)", "nvidia-cuda-cupti-cu12 (>=12.3.101)", "nvidia-cuda-nvcc-cu12 (>=12.3.107)", "nvidia-cuda-runtime-cu12 (>=12.3.101)", "nvidia-cudnn-cu12 (>=8.9.7.29)", "nvidia-cufft-cu12 (>=11.0.12.1)", "nvidia-cusolver-cu12 (>=11.5.4.101)", "nvidia-cusparse-cu12 (>=12.2.0.103)", "nvidia-nccl-cu12 (>=2.19.3)", "nvidia-nvjitlink-cu12 (>=12.3.101)"]
+cuda12_local = ["jaxlib (==0.4.25+cuda12.cudnn89)"]
+cuda12_pip = ["jaxlib (==0.4.25+cuda12.cudnn89)", "nvidia-cublas-cu12 (>=12.3.4.1)", "nvidia-cuda-cupti-cu12 (>=12.3.101)", "nvidia-cuda-nvcc-cu12 (>=12.3.107)", "nvidia-cuda-runtime-cu12 (>=12.3.101)", "nvidia-cudnn-cu12 (>=8.9.7.29)", "nvidia-cufft-cu12 (>=11.0.12.1)", "nvidia-cusolver-cu12 (>=11.5.4.101)", "nvidia-cusparse-cu12 (>=12.2.0.103)", "nvidia-nccl-cu12 (>=2.19.3)", "nvidia-nvjitlink-cu12 (>=12.3.101)"]
+minimum-jaxlib = ["jaxlib (==0.4.20)"]
+tpu = ["jaxlib (==0.4.25)", "libtpu-nightly (==0.1.dev20240224)", "requests"]
+
+[[package]]
+name = "jaxlib"
+version = "0.4.25"
+description = "XLA library for JAX"
+category = "main"
+optional = false
+python-versions = ">=3.9"
+
+[package.dependencies]
+ml-dtypes = ">=0.2.0"
+numpy = ">=1.22"
+scipy = [
+    {version = ">=1.9", markers = "python_version < \"3.12\""},
+    {version = ">=1.11.1", markers = "python_version >= \"3.12\""},
+]
+
+[package.extras]
+cuda11_pip = ["nvidia-cublas-cu11 (>=11.11)", "nvidia-cuda-cupti-cu11 (>=11.8)", "nvidia-cuda-nvcc-cu11 (>=11.8)", "nvidia-cuda-runtime-cu11 (>=11.8)", "nvidia-cudnn-cu11 (>=8.8)", "nvidia-cufft-cu11 (>=10.9)", "nvidia-cusolver-cu11 (>=11.4)", "nvidia-cusparse-cu11 (>=11.7)"]
+cuda12_pip = ["nvidia-cublas-cu12", "nvidia-cuda-cupti-cu12", "nvidia-cuda-nvcc-cu12", "nvidia-cuda-runtime-cu12", "nvidia-cudnn-cu12 (>=8.9)", "nvidia-cufft-cu12", "nvidia-cusolver-cu12", "nvidia-cusparse-cu12"]
+
+[[package]]
 name = "jinja2"
 version = "3.1.3"
 description = "A very fast and expressive template engine."
@@ -601,6 +656,25 @@ optional = false
 python-versions = ">=3.7"
 
 [[package]]
+name = "ml-dtypes"
+version = "0.3.2"
+description = ""
+category = "main"
+optional = false
+python-versions = ">=3.9"
+
+[package.dependencies]
+numpy = [
+    {version = ">1.20", markers = "python_version < \"3.10\""},
+    {version = ">=1.21.2", markers = "python_version >= \"3.10\""},
+    {version = ">=1.23.3", markers = "python_version >= \"3.11\""},
+    {version = ">=1.26.0", markers = "python_version >= \"3.12\""},
+]
+
+[package.extras]
+dev = ["absl-py", "pytest", "pytest-xdist", "pylint (>=2.6.0)", "pyink"]
+
+[[package]]
 name = "more-itertools"
 version = "10.2.0"
 description = "More routines for operating on iterables, beyond itertools"
@@ -629,6 +703,14 @@ description = "multidict implementation"
 category = "main"
 optional = false
 python-versions = ">=3.7"
+
+[[package]]
+name = "multipledispatch"
+version = "1.0.0"
+description = "Multiple dispatch"
+category = "main"
+optional = false
+python-versions = "*"
 
 [[package]]
 name = "multiprocess"
@@ -675,6 +757,30 @@ description = "Fundamental package for array computing in Python"
 category = "main"
 optional = false
 python-versions = ">=3.9"
+
+[[package]]
+name = "numpyro"
+version = "0.14.0"
+description = "Pyro PPL on NumPy"
+category = "main"
+optional = false
+python-versions = ">=3.9"
+
+[package.dependencies]
+jax = ">=0.4.14"
+jaxlib = ">=0.4.14"
+multipledispatch = "*"
+numpy = "*"
+tqdm = "*"
+
+[package.extras]
+cpu = ["jax[cpu] (>=0.4.14)"]
+cuda = ["jax[cuda] (>=0.4.14)"]
+dev = ["dm-haiku", "flax", "funsor (>=0.4.1)", "graphviz", "jaxns (==2.4.8)", "matplotlib", "optax (>=0.0.6)", "pylab-sdk", "pyyaml", "requests", "tensorflow-probability (>=0.18.0)"]
+doc = ["ipython", "nbsphinx (>=0.8.9)", "readthedocs-sphinx-search (>=0.3.2)", "sphinx (>=5)", "sphinx-rtd-theme", "sphinx-gallery"]
+examples = ["arviz", "jupyter", "matplotlib", "pandas", "seaborn", "scikit-learn", "wordcloud"]
+test = ["importlib-metadata (<5.0)", "ruff (>=0.1.8)", "pytest (>=4.1)", "pyro-api (>=0.1.1)", "scipy (>=1.9)"]
+tpu = ["jax[tpu] (>=0.4.14)"]
 
 [[package]]
 name = "nvidia-cublas-cu12"
@@ -782,6 +888,21 @@ description = "NVIDIA Tools Extension"
 category = "main"
 optional = false
 python-versions = ">=3"
+
+[[package]]
+name = "opt-einsum"
+version = "3.3.0"
+description = "Optimizing numpys einsum function"
+category = "main"
+optional = false
+python-versions = ">=3.5"
+
+[package.dependencies]
+numpy = ">=1.7"
+
+[package.extras]
+docs = ["sphinx (==1.2.3)", "sphinxcontrib-napoleon", "sphinx-rtd-theme", "numpydoc"]
+tests = ["pytest", "pytest-cov", "pytest-pep8"]
 
 [[package]]
 name = "optuna"
@@ -1411,7 +1532,7 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "57de7f5bca4d3ac9c458c8a04d05c17490feed9e001a897ed98e924db8ad066c"
+content-hash = "b67e94bc3472e49d743f5d06fa08d11b3d6481448e657a61ae9826c398ec1866"
 
 [metadata.files]
 absl-py = []
@@ -1445,6 +1566,8 @@ huggingface-hub = []
 huggingface-sb3 = []
 idna = []
 imitation = []
+jax = []
+jaxlib = []
 jinja2 = []
 joblib = []
 jsonpickle = []
@@ -1455,13 +1578,16 @@ markdown-it-py = []
 markupsafe = []
 matplotlib = []
 mdurl = []
+ml-dtypes = []
 more-itertools = []
 mpmath = []
 multidict = []
+multipledispatch = []
 multiprocess = []
 munch = []
 networkx = []
 numpy = []
+numpyro = []
 nvidia-cublas-cu12 = []
 nvidia-cuda-cupti-cu12 = []
 nvidia-cuda-nvrtc-cu12 = []
@@ -1474,6 +1600,7 @@ nvidia-cusparse-cu12 = []
 nvidia-nccl-cu12 = []
 nvidia-nvjitlink-cu12 = []
 nvidia-nvtx-cu12 = []
+opt-einsum = []
 optuna = []
 packaging = []
 pandas = []

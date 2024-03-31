@@ -24,23 +24,31 @@ from stable_baselines3.common.save_util import load_from_zip_file
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.vec_env import VecEnv
 
-from .data import (
+from ..data import (
     MultiAgentTransitions,
+    WeightingFn,
     generate_demonstrations,
     make_data_loader,
+    weight_agents_uniform,
 )
+from ..utils import save_policy
 from .callback import EvalCallback
-from .utils import save_policy
 
 
 class SelectiveBC(bc.BC):
-    def __init__(self, *args, weight_fn: Optional[Callable] = None, **kwargs):
+    def __init__(
+        self, *args, weight_fn: WeightingFn, other_data: Dict[str, Any], **kwargs
+    ):
         self.weight_fn = weight_fn
+        self.other_data = other_data
         super().__init__(*args, **kwargs)
 
     def set_demonstrations(self, demonstrations: MultiAgentTransitions) -> None:
         self._demo_data_loader = make_data_loader(
-            demonstrations, self.minibatch_size, weight_fn=self.weight_fn
+            demonstrations,
+            self.minibatch_size,
+            weight_fn=self.weight_fn,
+            other_data=self.other_data,
         )
 
 
@@ -81,7 +89,8 @@ def train_bc_agent(
     env_id: str,
     env_kwargs: Dict,
     demonstrations: MultiAgentTransitions,
-    weight_fn: Optional[Callable] = None,
+    other_data: Dict[str, Any] = {},
+    weight_fn: WeightingFn = weight_agents_uniform,
     train_epochs: int = 1,
     batch_size: int = 64,
     eval_freq: int = 10000,
@@ -108,6 +117,7 @@ def train_bc_agent(
         batch_size=batch_size,
         rng=rng,
         weight_fn=weight_fn,
+        other_data=other_data,
     )
 
     callback = ILEvalCallback(

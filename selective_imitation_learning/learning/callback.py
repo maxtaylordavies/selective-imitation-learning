@@ -7,7 +7,8 @@ from stable_baselines3.common.callbacks import EvalCallback as _EvalCallback
 from stable_baselines3.common.vec_env import VecEnv
 from tqdm import tqdm
 
-from .utils import save_policy, evaluate_policy
+from ..utils import save_policy
+from .utils import evaluate_policy
 
 
 class EvalCallback(_EvalCallback):
