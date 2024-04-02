@@ -17,6 +17,7 @@ seaborn = "^0.13.2"
 imitation = "^1.0.0"
 jax = "^0.4.25"
 numpyro = "^0.14.0"
+optax = "^0.2.2"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

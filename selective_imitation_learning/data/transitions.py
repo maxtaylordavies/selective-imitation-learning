@@ -1,6 +1,7 @@
 import dataclasses
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
+import jax.numpy as jnp
 import numpy as np
 import torch.utils.data as th_data
 from imitation.data import types, rollout
@@ -15,7 +16,7 @@ from ..utils import load_policy
 @dataclasses.dataclass(frozen=True)
 class MultiAgentTransitions(types.Transitions):
     # array of agent indices - agent_idxs[i] is the index of the agent associated with transition i
-    agent_idxs: np.ndarray
+    agent_idxs: jnp.ndarray
 
     def __post_init__(self):
         """Performs input validation: check shapes & dtypes match docstring."""
@@ -37,8 +38,13 @@ class MultiAgentTransitions(types.Transitions):
             return d_item
 
     def get_for_agent(self, agent: int):
-        indices = np.where(self.agent_idxs == agent)[0]
+        indices = jnp.where(self.agent_idxs == agent)[0]
         return self[indices]
+
+    # def sample_uniform(self, n: int):
+    #     assert n <= len(self)
+    #     idxs = np.random.choice(len(self), n, replace=False)
+    #     return self[idxs]
 
 
 def generate_demonstrations(
@@ -75,7 +81,7 @@ def flatten_trajectories(
             isinstance(getattr(traj, key), desired_type) for traj in trajectories
         )
 
-    assert all_of_type("obs", types.DictObs) or all_of_type("obs", np.ndarray)
+    assert all_of_type("obs", np.ndarray)
     assert all_of_type("acts", np.ndarray)
     assert len(agent_idxs) == len(trajectories)
 
@@ -98,10 +104,12 @@ def flatten_trajectories(
         infos = traj.infos if traj.infos is not None else np.array([{}] * len(traj))
         parts["infos"].append(infos)
 
-    cat_parts = {
-        key: types.concatenate_maybe_dictobs(part_list)
-        for key, part_list in parts.items()
-    }
+    def concat(key, item):
+        assert len(item) > 0
+        arr = np.concatenate(item)
+        return arr if key == "infos" else jnp.array(arr)
+
+    cat_parts = {key: concat(key, part_list) for key, part_list in parts.items()}
     lengths = set(map(len, cat_parts.values()))
     assert len(lengths) == 1, f"expected one length, got {lengths}"
 

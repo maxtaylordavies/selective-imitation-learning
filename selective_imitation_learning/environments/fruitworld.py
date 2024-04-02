@@ -3,11 +3,13 @@ from typing import Optional, Tuple, Union
 
 import gymnasium as gym
 from gymnasium.utils import seeding
+import jax.numpy as jnp
 import numpy as np
 from numpy.core.defchararray import replace
 import pygame
 
 from selective_imitation_learning.constants import ENV_CONSTANTS
+from selective_imitation_learning.utils import manhattan_dist
 
 ObsType = np.ndarray
 ActionType = int
@@ -275,3 +277,14 @@ class FruitWorld(gym.Env):
 
     def close(self):
         pass
+
+
+def featurise(obs: jnp.ndarray) -> jnp.ndarray:
+    agent_pos = jnp.array(jnp.unravel_index(jnp.argmax(obs == 1.0), obs.shape))
+    fruit_pos = jnp.array(
+        [
+            jnp.unravel_index(jnp.argmax(obs == (i + 1) * 0.25), obs.shape)
+            for i in range(3)
+        ]
+    )
+    return jnp.array([-manhattan_dist(agent_pos, f) for f in fruit_pos])
