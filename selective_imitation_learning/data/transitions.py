@@ -2,6 +2,7 @@ import dataclasses
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional
 
 import jax.numpy as jnp
+import jax.random as jr
 import numpy as np
 import torch.utils.data as th_data
 from imitation.data import types, rollout
@@ -41,10 +42,10 @@ class MultiAgentTransitions(types.Transitions):
         indices = jnp.where(self.agent_idxs == agent)[0]
         return self[indices]
 
-    # def sample_uniform(self, n: int):
-    #     assert n <= len(self)
-    #     idxs = np.random.choice(len(self), n, replace=False)
-    #     return self[idxs]
+    def sample_uniform(self, seed, n: int):
+        assert n <= len(self)
+        idxs = jr.permutation(jr.PRNGKey(seed), len(self))[:n]
+        return self[idxs]
 
 
 def generate_demonstrations(

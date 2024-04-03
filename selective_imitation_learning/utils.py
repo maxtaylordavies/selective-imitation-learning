@@ -1,20 +1,19 @@
 import jax.numpy as jnp
-import numpy as np
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.save_util import save_to_zip_file, load_from_zip_file
 
 
-def to_simplex(a):
+def to_simplex(a: jnp.ndarray) -> jnp.ndarray:
     tmp = a - a.min()
     return tmp / tmp.sum()
 
 
-def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+def cosine_sim(a: jnp.ndarray, b: jnp.ndarray) -> float:
+    return jnp.dot(a, b) / (jnp.linalg.norm(a) * jnp.linalg.norm(b))
 
 
-def manhattan_dist(a, b):
-    return jnp.abs(a - b).sum()
+def manhattan_dist(a: jnp.ndarray, b: jnp.ndarray) -> float:
+    return float(jnp.abs(a - b).sum())
 
 
 def save_policy(model: BasePolicy, path: str):

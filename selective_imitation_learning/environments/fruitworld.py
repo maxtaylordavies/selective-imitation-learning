@@ -4,6 +4,7 @@ from typing import Optional, Tuple, Union
 import gymnasium as gym
 from gymnasium.utils import seeding
 import jax.numpy as jnp
+import jax.random as jr
 import numpy as np
 from numpy.core.defchararray import replace
 import pygame
@@ -11,7 +12,7 @@ import pygame
 from selective_imitation_learning.constants import ENV_CONSTANTS
 from selective_imitation_learning.utils import manhattan_dist
 
-ObsType = np.ndarray
+ObsType = jnp.ndarray
 ActionType = int
 
 
@@ -42,11 +43,11 @@ class FruitWorld(gym.Env):
         self,
         grid_size: int,
         num_fruit: int,
-        fruit_preferences: np.ndarray,
+        fruit_preferences: jnp.ndarray,
         fruit_types_deterministic: bool = True,
-        fruit_type_probs: Optional[np.ndarray] = None,
-        fruit_loc_means: Optional[np.ndarray] = None,
-        fruit_loc_stds: Optional[np.ndarray] = None,
+        fruit_type_probs: Optional[jnp.ndarray] = None,
+        fruit_loc_means: Optional[jnp.ndarray] = None,
+        fruit_loc_stds: Optional[jnp.ndarray] = None,
         base_fruit_reward: float = 10.0,
         step_cost: float = 0.5,
         # stationary_cost: float = 5.0,
@@ -96,7 +97,7 @@ class FruitWorld(gym.Env):
             low=0,
             high=1,
             shape=(grid_size, grid_size),
-            dtype=np.float32,
+            dtype=jnp.float32,
         )
         self.state_space = self.observation_space
         self.action_space = gym.spaces.Discrete(5)
@@ -104,23 +105,25 @@ class FruitWorld(gym.Env):
     def _init_fruit_distributions(self):
         self.fruit_probs = {}
 
-        row_idxs, col_idxs = np.indices((self.grid_size, self.grid_size))
-        coords = np.column_stack((row_idxs.ravel(), col_idxs.ravel()))
+        row_idxs, col_idxs = jnp.indices((self.grid_size, self.grid_size))
+        coords = jnp.column_stack((row_idxs.ravel(), col_idxs.ravel()))
 
         if not self.fruit_types_deterministic and self.fruit_type_probs is None:
-            self.fruit_type_probs = np.ones(self.num_fruit_types) / self.num_fruit_types
+            self.fruit_type_probs = (
+                jnp.ones(self.num_fruit_types) / self.num_fruit_types
+            )
 
         if self.fruit_loc_means is None:
-            self.fruit_loc_means = np.ones((self.num_fruit_types, 2))
+            self.fruit_loc_means = jnp.ones((self.num_fruit_types, 2))
             self.fruit_loc_means *= self.grid_size // 2
 
         if self.fruit_loc_stds is None:
-            self.fruit_loc_stds = np.ones(self.num_fruit_types)
+            self.fruit_loc_stds = jnp.ones(self.num_fruit_types)
             self.fruit_loc_stds *= self.grid_size // 4
 
         for i in range(len(self.fruit_preferences)):
-            sq_dists = np.sum((coords - self.fruit_loc_means[i]) ** 2, axis=1)
-            self.fruit_probs[i] = np.exp(-sq_dists / (2 * self.fruit_loc_stds[i] ** 2))
+            sq_dists = jnp.sum((coords - self.fruit_loc_means[i]) ** 2, axis=1)
+            self.fruit_probs[i] = jnp.exp(-sq_dists / (2 * self.fruit_loc_stds[i] ** 2))
             self.fruit_probs[i] /= self.fruit_probs[i].sum()
 
     def reset(
@@ -128,13 +131,15 @@ class FruitWorld(gym.Env):
         seed: Optional[int] = None,
         options: Optional[dict] = None,
     ) -> Tuple[ObsType, dict]:
-        self._np_random, _ = seeding.np_random(seed)
+        # self._np_random, _ = seeding.np_random(seed)
+        self.rng_key = jr.PRNGKey(seed or 0)
         self.steps_taken = 0
 
         # initialise agent position
         # x, y = self._np_random.choice(self.grid_size, size=2, replace=True)
         # self.agent_pos = Position(x, y)
-        self.agent_pos = self._np_random.choice(self.agent_start_positions)
+        tmp = jr.randint(self.rng_key, (1,), 0, len(self.agent_start_positions))
+        self.agent_pos = self.agent_start_positions[tmp[0]]
 
         # # initialise lava positions
         # empty_cells = set(self.possible_locs) - {self.agent_pos}
@@ -146,7 +151,7 @@ class FruitWorld(gym.Env):
         #
 
         # initialise fruit positions
-        self.fruit_map = -np.ones((self.grid_size, self.grid_size), dtype=int)
+        self.fruit_map = -jnp.ones((self.grid_size, self.grid_size), dtype=int)
         self._place_fruit(self.num_fruit)
 
         # initialise counters
@@ -158,7 +163,7 @@ class FruitWorld(gym.Env):
     def step(self, action: ActionType) -> Tuple[ObsType, float, bool, bool, dict]:
         # move agent
         new_pos = self._get_new_pos(action)
-        moved = not np.all(new_pos == self.agent_pos)
+        moved = not jnp.all(new_pos == self.agent_pos)
         self.agent_pos = new_pos
 
         reward, done = -self.step_cost if moved else 0, False
@@ -176,7 +181,7 @@ class FruitWorld(gym.Env):
                 self._place_fruit(
                     1, fruit_type=fruit if self.fruit_types_deterministic else None
                 )
-                self.fruit_map[pos_idx] = -1
+                self.fruit_map = self.fruit_map.at[pos_idx].set(-1)
 
         # check for termination
         self.steps_taken += 1
@@ -201,37 +206,45 @@ class FruitWorld(gym.Env):
     def _place_fruit(self, n, fruit_type=None):
         # first split n between fruit types
         if fruit_type is not None:
-            fruit_counts = np.zeros(self.num_fruit_types, dtype=int)
-            fruit_counts[fruit_type] = n
-        elif self.fruit_types_deterministic:
+            fruit_counts = jnp.zeros(self.num_fruit_types, dtype=int)
+            fruit_counts = fruit_counts.at[fruit_type].set(n)
+        # elif self.fruit_types_deterministic:
+        else:
             assert n % self.num_fruit_types == 0
-            fruit_counts = np.full(
+            fruit_counts = jnp.full(
                 self.num_fruit_types, n // self.num_fruit_types, dtype=int
             )
-        else:
-            fruit_counts = self._np_random.multinomial(n, self.fruit_type_probs)
+        # else:
+        #     fruit_counts = jr.multinomial(n, self.fruit_type_probs)
 
         # then sample locations for each fruit type
         for fruit_type, count in enumerate(fruit_counts):
             probs = self.fruit_probs[fruit_type].copy()
-            occ_rows, occ_cols = np.where(self.fruit_map >= 0)
-            probs[occ_rows * self.grid_size + occ_cols] = 0
-            idxs = self._np_random.choice(
-                self.grid_size**2,
-                size=count,
-                p=probs / probs.sum(),
+            occ_rows, occ_cols = jnp.where(self.fruit_map >= 0)
+            probs = probs.at[occ_rows * self.grid_size + occ_cols].set(0)
+            probs /= probs.sum()
+
+            idxs = jr.choice(
+                self.rng_key,
+                jnp.arange(self.grid_size**2),
+                shape=(count,),
+                p=probs,
                 replace=False,
             )
-            self.fruit_map[np.unravel_index(idxs, (self.grid_size, self.grid_size))] = (
-                fruit_type
-            )
+            _idxs = jnp.unravel_index(idxs, (self.grid_size, self.grid_size))
+            self.fruit_map = self.fruit_map.at[_idxs].set(fruit_type)
+            # self.fruit_map[np.unravel_index(idxs, (self.grid_size, self.grid_size))] = (
+            #     fruit_type
+            # )
 
     def _get_obs(self, norm=True):
-        obs = self.fruit_map.copy().astype(np.float32) + 1
-        obs[self.agent_pos.to_np_idx()] = self.num_fruit_types + 1
+        obs = self.fruit_map.copy().astype(jnp.float32) + 1
+        obs = obs.at[self.agent_pos.to_np_idx()].set(self.num_fruit_types + 1)
+        # obs[self.agent_pos.to_np_idx()] = self.num_fruit_types + 1
         if not norm:
             return obs
-        return (obs - obs.min()) / (obs.max() - obs.min())
+        obs = (obs - obs.min()) / (obs.max() - obs.min())
+        return jnp.array(obs)
 
     def _render_frame(self):
         if self.render_mode == "human":

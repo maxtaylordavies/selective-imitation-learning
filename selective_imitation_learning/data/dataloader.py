@@ -1,11 +1,11 @@
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
-import numpy as np
 import torch.utils.data as th_data
 from imitation.data import types
 
 from .transitions import MultiAgentTransitions
-from .weighting import WeightingFn, weight_agents_uniform
+from .weighting import weight_agents_uniform
+from ..types import WeightingFn
 
 
 def make_data_loader(

@@ -3,7 +3,6 @@ from typing import Any, Callable, Dict, Optional, List, Union, Tuple
 import warnings
 
 import gymnasium as gym
-import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
