@@ -15,6 +15,7 @@ from PIL import Image
 
 
 from selective_imitation_learning.environments import FruitWorld, featurise
+from selective_imitation_learning.environments.fruitworld import expert_policy
 from selective_imitation_learning.data import MultiAgentTransitions
 from selective_imitation_learning.utils import (
     is_power,
@@ -34,7 +35,7 @@ env_id = "FruitWorld-v0"
 env_kwargs = {
     "grid_size": 7,
     "num_fruit": 3,
-    "fruit_preferences": fruit_prefs[0],
+    "fruit_prefs": fruit_prefs[0],
     # "fruit_loc_means": np.array([[0, 0], [0, 6], [6, 3]]),
     "fruit_loc_means": np.array([[3, 3], [3, 3], [3, 3]]),
     "fruit_loc_stds": 1 * np.ones(3),
@@ -52,28 +53,6 @@ def featurise(obs: jnp.ndarray) -> jnp.ndarray:
     return feats
 
 
-def compute_action(obs, fruit_prefs):
-    fruit = np.argmax(fruit_prefs) + 1
-    own_pos = np.array(np.unravel_index(np.argmax(obs == -1.0), obs.shape))
-    fruit_pos = np.array(np.unravel_index(np.argmax(obs == fruit), obs.shape))
-    delta_x, delta_y = jnp.sign(fruit_pos - own_pos)
-
-    poss_actions = []
-    if delta_x == -1:
-        poss_actions.append(0)
-    if delta_x == 1:
-        poss_actions.append(1)
-    if delta_y == -1:
-        poss_actions.append(2)
-    if delta_y == 1:
-        poss_actions.append(3)
-
-    if len(poss_actions) == 0:
-        poss_actions = [0, 1, 2, 3]
-
-    return np.random.choice(poss_actions)
-
-
 def generate_expert_data(env, min_ts_per_agent):
     obss, acts, next_obss, dones, infos, a_idxs = [], [], [], [], [], []
     pbar = tqdm(total=3 * min_ts_per_agent)
@@ -83,9 +62,12 @@ def generate_expert_data(env, min_ts_per_agent):
             obs, _ = env.reset()
             done = False
             while not done:
+                env.render()
+                time.sleep(0.2)
+
                 obss.append(obs)
 
-                act = compute_action(obs, fruit_prefs[a])
+                act = expert_policy(obs, fruit_prefs[a])
                 next_obs, _, done, _, info = env.step(act)
 
                 acts.append(act)

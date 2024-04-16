@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import gymnasium as gym
 from gymnasium.utils import seeding
@@ -13,15 +13,15 @@ from selective_imitation_learning.utils import manhattan_dist, to_simplex
 from .utils import Position, GridActions, delta_x_actions, delta_y_actions
 
 ObsType = NDArray[np.float32]
-ActionType = int
+ActionType = NDArray[np.int8]
 
 
-class FruitWorld(gym.Env):
+class MultiAgentFruitWorld(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
     state_space: gym.Space
     _np_random: np.random.Generator
     fruit_probs: Dict[int, NDArray[np.float32]]
-    agent_pos: Position
+    agent_positions: List[Position]
 
     def __init__(
         self,
@@ -48,13 +48,14 @@ class FruitWorld(gym.Env):
         ), "Number of fruits and lava cells exceeds grid size"
 
         self.grid_size = grid_size
+        self.num_agents = fruit_prefs.shape[0]
+        self.num_fruit_types = fruit_prefs.shape[1]
         self.num_fruit = num_fruit
         self.fruit_prefs = fruit_prefs
         self.fruit_types_deterministic = fruit_types_deterministic
         self.fruit_type_probs = fruit_type_probs
         self.fruit_loc_means = fruit_loc_means
         self.fruit_loc_stds = fruit_loc_stds
-        self.num_fruit_types = len(fruit_prefs)
         self.base_fruit_reward = base_fruit_reward
         self.step_cost = step_cost
         self.num_lava = num_lava
@@ -76,14 +77,19 @@ class FruitWorld(gym.Env):
         )
 
         # Define observation and action spaces
-        self.observation_space = gym.spaces.Box(
-            low=-1,
-            high=3,
-            shape=(grid_size, grid_size),
+        #   - Observation space is a 2D grid with 2 channels - one for agent
+        #   positions and one for fruit positions
+        #   - Action space is a MultiDiscrete space with each agent having
+        #   5 possible actions (up, down, left, right, no-op)
+        self.observation_space = self.state_space = gym.spaces.Box(
+            low=0,
+            high=max(self.num_agents, self.num_fruit_types),
+            shape=(2, grid_size, grid_size),
             dtype=np.float32,
         )
-        self.state_space = self.observation_space
-        self.action_space = gym.spaces.Discrete(len(GridActions))
+        self.action_space = gym.spaces.MultiDiscrete(
+            len(GridActions) * np.ones(self.num_agents, dtype=int)
+        )
 
     def _init_fruit_distributions(self):
         self.fruit_probs = {}
@@ -115,54 +121,43 @@ class FruitWorld(gym.Env):
         self._np_random, _ = seeding.np_random(seed)
         self.steps_taken = 0
 
-        # initialise agent position
-        # x, y = self._np_random.choice(self.grid_size, size=2, replace=True)
-        # self.agent_pos = Position(x, y)
-        self.agent_pos = self.agent_start_positions[
-            self._np_random.integers(0, len(self.agent_start_positions))
-        ]
-
-        # # initialise lava positions
-        # empty_cells = set(self.possible_locs) - {self.agent_pos}
-        # self.lava = self._np_random.choice(
-        #     list(empty_cells),
-        #     size=(self.num_lava,),
-        #     replace=False,
-        # )
-        #
+        # initialise agent positions
+        self.agent_positions = self._np_random.choice(
+            self.agent_start_positions,
+            size=self.num_agents,
+            replace=False,
+        ).tolist()
 
         # initialise fruit positions
         self.fruit_map = np.zeros((self.grid_size, self.grid_size), dtype=int)
         self._place_fruit(self.num_fruit)
 
         # initialise counters
-        self.consumed_counts = [0] * len(self.fruit_prefs)
+        self.consumed_counts = np.zeros((self.num_agents, self.num_fruit_types))
 
         # return initial observation
         return self._get_obs(), {}
 
-    def step(self, action: ActionType) -> Tuple[ObsType, float, bool, bool, dict]:
+    def step(self, action: ActionType) -> Tuple[ObsType, NDArray, bool, bool, dict]:
         # move agent
-        new_pos = self._get_new_pos(action)
-        moved = not new_pos == self.agent_pos
-        self.agent_pos = new_pos
+        new_agent_positions = self._get_new_agent_positions(action)
+        moveds = np.array(new_agent_positions) != np.array(self.agent_positions)
+        self.agent_positions = new_agent_positions
 
-        reward, done = -self.step_cost if moved else 0, False
-
-        # check for lava-induced death or fruit consumption
-        if moved:
-            # if self.agent_pos in self.lava:
-            #     done = True
-            # else:
-            pos_idx = self.agent_pos.to_np_idx()
+        # determine rewards and regenerate any consumed fruit
+        rewards, done = np.zeros(self.num_agents), False
+        for m, (pos, moved) in enumerate(zip(self.agent_positions, moveds)):
+            if not moved:
+                continue
+            rewards[m] -= self.step_cost
+            pos_idx = pos.to_np_idx()
             fruit = self.fruit_map[pos_idx] - 1
             if fruit >= 0:
-                reward += float(self.fruit_prefs[fruit] * self.base_fruit_reward)
-                self.consumed_counts[fruit] += 1
+                rewards[m] += float(self.fruit_prefs[m, fruit] * self.base_fruit_reward)
+                self.consumed_counts[m, fruit] += 1
                 self._place_fruit(
                     1, fruit_type=fruit if self.fruit_types_deterministic else None
                 )
-                # self.fruit_map = self.fruit_map.at[pos_idx].set(-1)
                 self.fruit_map[pos_idx] = 0
 
         # check for termination
@@ -171,10 +166,10 @@ class FruitWorld(gym.Env):
             done = True
 
         info = {"consumed_counts": self.consumed_counts} if done else {}
-        return self._get_obs(), reward, done, False, info
+        return self._get_obs(), rewards, done, False, info
 
-    def _get_new_pos(self, action: ActionType) -> Position:
-        new_pos = Position(self.agent_pos.x, self.agent_pos.y)
+    def _move_agent(self, cur_pos, others, action: int) -> Position:
+        new_pos = Position(cur_pos.x, cur_pos.y)
         if action == GridActions.up:
             new_pos.y = max(0, new_pos.y - 1)
         elif action == GridActions.down:
@@ -183,9 +178,19 @@ class FruitWorld(gym.Env):
             new_pos.x = max(0, new_pos.x - 1)
         elif action == GridActions.right:
             new_pos.x = min(self.grid_size - 1, new_pos.x + 1)
+
+        if new_pos in others:
+            return cur_pos
         return new_pos
 
-    def _place_fruit(self, n, fruit_type=None) -> None:
+    def _get_new_agent_positions(self, action: ActionType) -> List[Position]:
+        new_positions = [Position.copy(pos) for pos in self.agent_positions]
+        for m, pos in enumerate(new_positions):
+            others = new_positions[:m] + new_positions[m + 1 :]
+            new_positions[m] = self._move_agent(pos, others, action[m])
+        return new_positions
+
+    def _place_fruit(self, n, fruit_type=None):
         # first split n between fruit types
         if fruit_type is not None:
             fruit_counts = np.zeros(self.num_fruit_types, dtype=int)
@@ -207,8 +212,9 @@ class FruitWorld(gym.Env):
             # set probabilities of occupied locations to 0
             occ_rows, occ_cols = np.where(self.fruit_map > 0)
             probs[occ_rows * self.grid_size + occ_cols] = 0
-            agent_r, agent_c = self.agent_pos.to_np_idx()
-            probs[agent_r * self.grid_size + agent_c] = 0
+            for agent_pos in self.agent_positions:
+                r, c = agent_pos.to_np_idx()
+                probs[r * self.grid_size + c] = 0
 
             # sample locations
             idxs = self._np_random.choice(
@@ -219,8 +225,15 @@ class FruitWorld(gym.Env):
             )
 
     def _get_obs(self, norm=False) -> ObsType:
-        obs = self.fruit_map.copy().astype(np.float32)
-        obs[self.agent_pos.to_np_idx()] = -1
+        obs = np.zeros((2, self.grid_size, self.grid_size), dtype=np.float32)
+
+        # set agent positions in first channel
+        for m, pos in enumerate(self.agent_positions):
+            obs[0, pos.y, pos.x] = m + 1
+
+        # set fruit positions in second channel
+        obs[1] = self.fruit_map.copy().astype(np.float32)
+
         if not norm:
             return obs
         return (obs - obs.min()) / (obs.max() - obs.min())
@@ -235,7 +248,9 @@ class FruitWorld(gym.Env):
             if self.clock is None:
                 self.clock = pygame.time.Clock()
 
-            obs = self._get_obs(norm=False).T
+            obs = self._get_obs(norm=False)
+            agent_map = obs[0].T
+            fruit_map = obs[1].T
 
             self.window.fill((255, 255, 255))
             for i in range(self.grid_size):
@@ -246,20 +261,19 @@ class FruitWorld(gym.Env):
                         (i * 50, j * 50, 50, 50),
                         2,
                     )
-                    if obs[i, j] > 0 and obs[i, j] <= self.num_fruit_types:
+                    if agent_map[i, j] > 0:
+                        pygame.draw.rect(
+                            self.window,
+                            ENV_CONSTANTS["agent_colours"][int(agent_map[i, j] - 1)],
+                            (i * 50, j * 50, 50, 50),
+                        )
+                    elif fruit_map[i, j] > 0:
                         pygame.draw.circle(
                             self.window,
-                            ENV_CONSTANTS["fruit_colours"][int(obs[i, j] - 1)],
+                            ENV_CONSTANTS["fruit_colours"][int(fruit_map[i, j] - 1)],
                             (i * 50 + 25, j * 50 + 25),
                             20,
                         )
-
-            pygame.draw.rect(
-                self.window,
-                (0, 0, 0),
-                (self.agent_pos.x * 50, self.agent_pos.y * 50, 50, 50),
-                50,
-            )
 
             pygame.display.flip()
             self.clock.tick(10)
@@ -271,22 +285,21 @@ class FruitWorld(gym.Env):
         pass
 
 
-def featurise(obs: jnp.ndarray) -> jnp.ndarray:
-    agent_pos = jnp.array(jnp.unravel_index(jnp.argmax(obs == 1.0), obs.shape))
-    fruit_pos = jnp.array(
-        [
-            jnp.unravel_index(jnp.argmax(obs == (i + 1) * 0.25), obs.shape)
-            for i in range(3)
-        ]
-    )
-    feats = jnp.array([-manhattan_dist(agent_pos, f) for f in fruit_pos])
-    return feats / (feats.sum() + 1e-6)
-
-
 def expert_policy(obs: ObsType, fruit_prefs: NDArray) -> ActionType:
-    target = np.argmax(fruit_prefs) + 1
-    own_pos = np.array(np.unravel_index(np.argmax(obs == -1), obs.shape))
-    target_pos = np.array(np.unravel_index(np.argmax(obs == target), obs.shape))
-    delta_x, delta_y = np.sign(target_pos - own_pos)
-    poss_actions = delta_x_actions[delta_x] + delta_y_actions[delta_y]
-    return np.random.choice(poss_actions or list(GridActions))
+    M = len(fruit_prefs)  # number of agents
+    actions = np.array([GridActions.no_op] * M)
+    agent_map, fruit_map = obs[0], obs[1]
+
+    for m in range(M):
+        target = np.argmax(fruit_prefs[m]) + 1
+        own_pos = np.array(
+            np.unravel_index(np.argmax(agent_map == m + 1), agent_map.shape)
+        )
+        target_pos = np.array(
+            np.unravel_index(np.argmax(fruit_map == target), fruit_map.shape)
+        )
+        delta_x, delta_y = np.sign(target_pos - own_pos)
+        poss_actions = delta_x_actions[delta_x] + delta_y_actions[delta_y]
+        actions[m] = np.random.choice(poss_actions or list(GridActions))
+
+    return np.array(actions)
