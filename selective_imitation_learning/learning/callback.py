@@ -34,19 +34,19 @@ class EvalCallback(_EvalCallback):
             verbose=verbose,
             warn=warn,
         )
-        self.evaluations_results: List[List[float]] = []
-        self.evaluations_timesteps: List[int] = []
-        self.evaluations_length: List[List[int]] = []
-        self.consumed_counts: List[List[List[int]]] = []
+        self.metrics = {
+            "results": [],
+            "timesteps": [],
+            "ep_lengths": [],
+            "consumed_counts": [],
+        }
         self._prev_last_timestep = 0
 
         if resume:
             npz_file = np.load(f"{self.log_path}.npz")
-            self.evaluations_results = npz_file["results"].tolist()
-            self.evaluations_timesteps = npz_file["timesteps"].tolist()
-            self.evaluations_length = npz_file["ep_lengths"].tolist()
-            self.consumed_counts = npz_file["consumed_counts"].tolist()
-            self._prev_last_timestep = self.evaluations_timesteps[-1]
+            for key in self.metrics.keys():
+                self.metrics[key] = npz_file[key].tolist()
+            self._prev_last_timestep = self.metrics["timesteps"][-1]
 
     def _run_eval(self):
         episode_rewards, episode_lengths, episode_consumed_counts = evaluate_policy(
@@ -62,18 +62,11 @@ class EvalCallback(_EvalCallback):
             assert isinstance(episode_rewards, list)
             assert isinstance(episode_lengths, list)
             assert isinstance(episode_consumed_counts, list)
-            self.evaluations_timesteps.append(self.num_timesteps)
-            self.evaluations_results.append(episode_rewards)
-            self.evaluations_length.append(episode_lengths)
-            self.consumed_counts.append(episode_consumed_counts)
-
-            np.savez(
-                self.log_path,
-                timesteps=self.evaluations_timesteps,
-                results=self.evaluations_results,
-                ep_lengths=self.evaluations_length,
-                consumed_counts=self.consumed_counts,
-            )
+            self.metrics["timesteps"].append(self.num_timesteps)
+            self.metrics["results"].append(episode_rewards)
+            self.metrics["ep_lengths"].append(episode_lengths)
+            self.metrics["consumed_counts"].append(episode_consumed_counts)
+            np.savez(self.log_path, **self.metrics)
 
         mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
         mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(
@@ -98,8 +91,3 @@ class EvalCallback(_EvalCallback):
         save_policy(
             self.model.policy, os.path.join(self.best_model_save_path, "best_model")
         )
-
-    # def _save_best_model(self):
-    #     if self.best_model_save_path is None:
-    #         return
-    #     self.model.save(os.path.join(self.best_model_save_path, "best_model"))

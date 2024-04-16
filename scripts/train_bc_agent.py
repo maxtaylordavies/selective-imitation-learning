@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 
+import jax.numpy as jnp
 import numpy as np
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.env_util import make_vec_env
@@ -12,6 +13,8 @@ from selective_imitation_learning.learning import (
     load_policy,
     enjoy_policy,
 )
+from selective_imitation_learning.environments import featurise
+from selective_imitation_learning.data import weight_agents_sim
 
 run_name = "test_bc"
 seed = 0
@@ -28,7 +31,6 @@ env_kwargs = {
 expert_paths = [
     f"../checkpoints/ppo/{colour}/best_model.zip" for colour in ("red", "green", "blue")
 ]
-expert_info = [{"preference": "red"}, {"preference": "green"}, {"preference": "blue"}]
 
 
 # generate expert demonstrations
@@ -39,16 +41,8 @@ demonstrations = generate_demonstrations(
     train_env,
     rng,
     expert_paths,
-    expert_info,
-    int(1e5),
+    int(1e3),
 )
-
-
-# define weighting function
-def weight_fn(infos):
-    f = lambda info: int(info["preference"] == "blue")
-    return np.array([f(info) for info in infos])
-
 
 print("beginning training")
 train_bc_agent(
@@ -57,12 +51,14 @@ train_bc_agent(
     env_id=env_id,
     env_kwargs=env_kwargs,
     demonstrations=demonstrations,
-    weight_fn=weight_fn,
+    featuriser=featurise,
+    weight_fn=weight_agents_sim,
+    omegas_self=jnp.array([1.0, 0.0, 0.0]),
     train_epochs=5,
 )
 
 plot_eval_curves(run_name, window_size=20)
 
-# load trained policy
-policy = load_policy(os.path.join("../checkpoints", run_name, "best_model.zip"))
-enjoy_policy(policy, env_id, env_kwargs, seed=seed)
+# # load trained policy
+# policy = load_policy(os.path.join("../checkpoints", run_name, "best_model.zip"))
+# enjoy_policy(policy, env_id, env_kwargs, seed=seed)

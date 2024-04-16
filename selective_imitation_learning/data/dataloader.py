@@ -1,61 +1,41 @@
-from typing import Any, Callable, Dict, Iterable, Mapping, Optional
+from typing import Optional
 
-import torch.utils.data as th_data
-from imitation.data import types
+import jax
+import jax.random as jr
+import jax.numpy as jnp
 
 from .transitions import MultiAgentTransitions
-from .weighting import weight_agents_uniform
-from ..types import WeightingFn
 
 
-def make_data_loader(
-    transitions: MultiAgentTransitions,
-    batch_size: int,
-    other_data: Dict[str, Any] = {},
-    weight_fn: WeightingFn = weight_agents_uniform,
-    data_loader_kwargs: Optional[Mapping[str, Any]] = None,
-) -> Iterable[types.TransitionMapping]:
-    """Converts demonstration data to Torch data loader.
+class BCBatchLoader:
+    def __init__(
+        self,
+        transitions: MultiAgentTransitions,
+        batch_size: int,
+    ):
+        self.transitions = transitions
+        self.batch_size = batch_size
+        self.sample_weights = jnp.ones(len(transitions)) / len(transitions)
 
-    Args:
-        transitions: Transitions expressed directly as a `types.TransitionsMinimal`
-            object, a sequence of trajectories, or an iterable of transition
-            batches (mappings from keywords to arrays containing observations, etc).
-        batch_size: The size of the batch to create. Does not change the batch size
-            if `transitions` is already an iterable of transition batches.
-        data_loader_kwargs: Arguments to pass to `th_data.DataLoader`.
+    def set_sample_weights(self, agent_weights: jax.Array):
+        ws = agent_weights[self.transitions.agent_idxs]
+        _sum = ws.sum()
+        if _sum == 0:
+            self.sample_weights = jnp.ones(len(ws)) / len(ws)
+        else:
+            self.sample_weights = ws / _sum
 
-    Returns:
-        An iterable of transition batches.
+    def sample_batch(
+        self, agent_weights: Optional[jax.Array], uniform=False, size=None
+    ) -> MultiAgentTransitions:
+        if not uniform and agent_weights is not None:
+            self.set_sample_weights(agent_weights)
 
-    Raises:
-        ValueError: if `transitions` is an iterable over transition batches with batch
-            size not equal to `batch_size`; or if `transitions` is transitions or a
-            sequence of trajectories with total timesteps less than `batch_size`.
-        TypeError: if `transitions` is an unsupported type.
-    """
-    assert batch_size > 0, f"Batch size must be positive, got {batch_size}."
-    assert (
-        len(transitions) >= batch_size
-    ), "Number of provided transitions cannot be smaller than batch size."
+        size = size or self.batch_size
+        p = None if uniform else self.sample_weights
+        return self._sample_batch(size, p)
 
-    # define sample weights for WeightedRandomSampler
-    agent_weights = weight_fn(transitions, other_data)
-    print(f"Agent weights: {agent_weights}")
-    sample_weights = agent_weights[transitions.agent_idxs]
-    sample_weights /= sample_weights.sum()
-
-    sampler = th_data.WeightedRandomSampler(sample_weights, len(sample_weights))
-
-    kwargs: Mapping[str, Any] = {
-        "drop_last": True,
-        **(data_loader_kwargs or {}),
-    }
-
-    return th_data.DataLoader(
-        transitions,
-        batch_size=batch_size,
-        sampler=sampler,
-        collate_fn=types.transitions_collate_fn,
-        **kwargs,
-    )
+    def _sample_batch(self, n, p) -> MultiAgentTransitions:
+        tmp = jnp.arange(len(self.transitions))
+        idxs = jr.choice(jr.PRNGKey(0), tmp, (n,), p=p)
+        return self.transitions[idxs]

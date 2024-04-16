@@ -18,6 +18,10 @@ imitation = "^1.0.0"
 jax = "^0.4.25"
 numpyro = "^0.14.0"
 optax = "^0.2.2"
+equinox = "^0.11.3"
+plotly = "^5.20.0"
+moviepy = "^1.0.3"
+array2gif = "^1.0.4"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"
