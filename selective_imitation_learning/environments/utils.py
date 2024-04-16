@@ -34,3 +34,7 @@ class GridActions(IntEnum):
     left: int = 2
     right: int = 3
     no_op: int = 4
+
+
+delta_x_actions = {-1: [GridActions.up], 1: [GridActions.down], 0: []}
+delta_y_actions = {-1: [GridActions.left], 1: [GridActions.right], 0: []}

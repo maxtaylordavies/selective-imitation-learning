@@ -10,7 +10,7 @@ import pygame
 
 from selective_imitation_learning.constants import ENV_CONSTANTS
 from selective_imitation_learning.utils import manhattan_dist, to_simplex
-from .utils import Position, GridActions
+from .utils import Position, GridActions, delta_x_actions, delta_y_actions
 
 ObsType = NDArray[np.float32]
 ActionType = int
@@ -281,3 +281,12 @@ def featurise(obs: jnp.ndarray) -> jnp.ndarray:
     )
     feats = jnp.array([-manhattan_dist(agent_pos, f) for f in fruit_pos])
     return feats / (feats.sum() + 1e-6)
+
+
+def expert_policy(obs: ObsType, fruit_prefs: NDArray) -> ActionType:
+    target = np.argmax(fruit_prefs) + 1
+    own_pos = np.array(np.unravel_index(np.argmax(obs == -1), obs.shape))
+    target_pos = np.array(np.unravel_index(np.argmax(obs == target), obs.shape))
+    delta_x, delta_y = np.sign(target_pos - own_pos)
+    poss_actions = delta_x_actions[delta_x] + delta_y_actions[delta_y]
+    return np.random.choice(poss_actions or list(GridActions))

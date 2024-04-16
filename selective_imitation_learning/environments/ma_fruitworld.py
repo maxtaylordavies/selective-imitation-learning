@@ -10,7 +10,7 @@ import pygame
 
 from selective_imitation_learning.constants import ENV_CONSTANTS
 from selective_imitation_learning.utils import manhattan_dist, to_simplex
-from .utils import Position, GridActions
+from .utils import Position, GridActions, delta_x_actions, delta_y_actions
 
 ObsType = NDArray[np.float32]
 ActionType = NDArray[np.int8]
@@ -285,13 +285,21 @@ class MultiAgentFruitWorld(gym.Env):
         pass
 
 
-def featurise(obs: jnp.ndarray) -> jnp.ndarray:
-    agent_pos = jnp.array(jnp.unravel_index(jnp.argmax(obs == 1.0), obs.shape))
-    fruit_pos = jnp.array(
-        [
-            jnp.unravel_index(jnp.argmax(obs == (i + 1) * 0.25), obs.shape)
-            for i in range(3)
-        ]
-    )
-    feats = jnp.array([-manhattan_dist(agent_pos, f) for f in fruit_pos])
-    return feats / (feats.sum() + 1e-6)
+def expert_policy(obs: ObsType, fruit_prefs: NDArray) -> ActionType:
+    M = len(fruit_prefs)  # number of agents
+    actions = np.array([GridActions.no_op] * M)
+    agent_map, fruit_map = obs[0], obs[1]
+
+    for m in range(M):
+        target = np.argmax(fruit_prefs[m]) + 1
+        own_pos = np.array(
+            np.unravel_index(np.argmax(agent_map == m + 1), agent_map.shape)
+        )
+        target_pos = np.array(
+            np.unravel_index(np.argmax(fruit_map == target), fruit_map.shape)
+        )
+        delta_x, delta_y = np.sign(target_pos - own_pos)
+        poss_actions = delta_x_actions[delta_x] + delta_y_actions[delta_y]
+        actions[m] = np.random.choice(poss_actions or list(GridActions))
+
+    return np.array(actions)
