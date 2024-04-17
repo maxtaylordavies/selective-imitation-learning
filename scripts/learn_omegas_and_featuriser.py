@@ -16,7 +16,10 @@ from PIL import Image
 
 from selective_imitation_learning.environments import FruitWorld, featurise
 from selective_imitation_learning.environments.fruitworld import expert_policy
-from selective_imitation_learning.data import MultiAgentTransitions
+from selective_imitation_learning.data import (
+    SplitMultiAgentTransitions,
+    generate_split_dataset,
+)
 from selective_imitation_learning.utils import (
     is_power,
     to_range,
@@ -51,45 +54,6 @@ def featurise(obs: jnp.ndarray) -> jnp.ndarray:
     )
     feats = jnp.array([-manhattan_dist(agent_pos, f) for f in fruit_pos])
     return feats
-
-
-def generate_expert_data(env, min_ts_per_agent):
-    obss, acts, next_obss, dones, infos, a_idxs = [], [], [], [], [], []
-    pbar = tqdm(total=3 * min_ts_per_agent)
-    for a in range(3):
-        ts_done = 0
-        while ts_done < min_ts_per_agent:
-            obs, _ = env.reset()
-            done = False
-            while not done:
-                env.render()
-                time.sleep(0.2)
-
-                obss.append(obs)
-
-                act = expert_policy(obs, fruit_prefs[a])
-                next_obs, _, done, _, info = env.step(act)
-
-                acts.append(act)
-                next_obss.append(next_obs)
-                dones.append(done)
-                infos.append(info)
-                a_idxs.append(a)
-
-                obs = next_obs
-                ts_done += 1
-                pbar.update(1)
-
-    transitions = MultiAgentTransitions(
-        obs=jnp.array(obss),
-        acts=jnp.array(acts),
-        next_obs=jnp.array(next_obss),
-        dones=jnp.array(dones),
-        infos=np.array(infos),
-        agent_idxs=jnp.array(a_idxs),
-    )
-    print(f"generated {len(transitions)} transitions")
-    return transitions
 
 
 @jax.jit
@@ -159,7 +123,7 @@ def featuriser_histogram(f, omegas, episodes, bins=125):
     side = round(bins ** (1 / 3))
     hist, fss = np.zeros((side, side, side)), []
 
-    for ep in tqdm(episodes):
+    for ep in episodes:
         _, fs = compute_agent_probs(f, omegas, ep)
         fs = fs / np.linalg.norm(fs)
         fss.append(fs * side)
@@ -283,14 +247,13 @@ def train(
             )
             loss_ts.append(i)
             losses.append(float(loss))
-            tqdm.write(f"loss: {loss}")
+            # tqdm.write(f"loss: {loss}")
 
         if i % eval_interval == 0:
             eval_score = do_eval(keys[i], test_data, featuriser, omegas, n=100)
             eval_ts.append(i)
             evals.append(eval_score)
-            tqdm.write(f"eval: {eval_score}")
-            tqdm.write(f"omegas: {omegas}")
+            # tqdm.write(f"eval: {eval_score}")
 
         if i % visualise_interval == 0:
             fig, _ = visualise_training_progress(
@@ -323,8 +286,28 @@ key = jr.PRNGKey(seed)
 
 # sample expert transitions
 env = gym.make(env_id, **env_kwargs)
-train_data = generate_expert_data(env, int(1e5))
-test_data = generate_expert_data(env, int(1e4))
+# train_data = generate_expert_data(env, int(1e5))
+# test_data = generate_expert_data(env, int(1e4))
+policy_funcs = [expert_policy for _ in range(3)]
+policy_func_kwargs = [{"fruit_prefs": fruit_prefs[m]} for m in range(3)]
+print(f"generating train data...")
+train_data = generate_split_dataset(
+    env,
+    seed,
+    int(1e5),
+    policy_funcs,
+    policy_func_kwargs,
+)
+print(len(train_data))
+print(f"generating test data...")
+test_data = generate_split_dataset(
+    env,
+    seed,
+    int(1e4),
+    policy_funcs,
+    policy_func_kwargs,
+)
+print(len(test_data))
 
 # find network initialisation with lowest starting loss
 omegas = jr.multivariate_normal(key, jnp.ones(3) / 3, jnp.eye(3) / 20, (3,))

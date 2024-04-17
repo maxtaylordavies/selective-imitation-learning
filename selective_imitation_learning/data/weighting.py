@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import jax.random as jr
 from tqdm import tqdm
 
-from .transitions import MultiAgentTransitions
+from .transitions import SplitMultiAgentTransitions
 from ..utils import cosine_sim, to_simplex
 from ..types import FeaturisingFn
 
@@ -46,7 +46,9 @@ def transitions_ll(
     )
 
 
-def dataset_ll(transitions: MultiAgentTransitions, f: FeaturisingFn, omegas: Array):
+def dataset_ll(
+    transitions: SplitMultiAgentTransitions, f: FeaturisingFn, omegas: Array
+):
     return transitions_ll(
         f, transitions.obs, transitions.next_obs, transitions.agent_idxs, omegas
     )

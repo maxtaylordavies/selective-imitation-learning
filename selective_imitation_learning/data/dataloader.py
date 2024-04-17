@@ -4,13 +4,13 @@ import jax
 import jax.random as jr
 import jax.numpy as jnp
 
-from .transitions import MultiAgentTransitions
+from .transitions import SplitMultiAgentTransitions
 
 
 class BCBatchLoader:
     def __init__(
         self,
-        transitions: MultiAgentTransitions,
+        transitions: SplitMultiAgentTransitions,
         batch_size: int,
     ):
         self.transitions = transitions
@@ -27,7 +27,7 @@ class BCBatchLoader:
 
     def sample_batch(
         self, agent_weights: Optional[jax.Array], uniform=False, size=None
-    ) -> MultiAgentTransitions:
+    ) -> SplitMultiAgentTransitions:
         if not uniform and agent_weights is not None:
             self.set_sample_weights(agent_weights)
 
@@ -35,7 +35,7 @@ class BCBatchLoader:
         p = None if uniform else self.sample_weights
         return self._sample_batch(size, p)
 
-    def _sample_batch(self, n, p) -> MultiAgentTransitions:
+    def _sample_batch(self, n, p) -> SplitMultiAgentTransitions:
         tmp = jnp.arange(len(self.transitions))
         idxs = jr.choice(jr.PRNGKey(0), tmp, (n,), p=p)
         return self.transitions[idxs]
