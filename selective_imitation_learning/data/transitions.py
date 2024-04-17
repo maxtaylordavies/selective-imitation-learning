@@ -48,6 +48,24 @@ class SplitMultiAgentTransitions(types.Transitions):
         return self[idxs]
 
 
+@dataclasses.dataclass(frozen=True)
+class UnifiedMultiAgentTransitions(types.Transitions):
+    def __getitem__(self, key):
+        """See TransitionsMinimal docstring for indexing and slicing semantics."""
+        d = types.dataclass_quick_asdict(self)
+        d_item = {k: v[key] for k, v in d.items()}
+
+        if not isinstance(key, int):
+            return dataclasses.replace(self, **d_item)
+        else:
+            return d_item
+
+    def sample_uniform(self, seed, n: int):
+        assert n <= len(self)
+        idxs = jr.permutation(jr.PRNGKey(seed), len(self))[:n]
+        return self[idxs]
+
+
 def generate_demonstrations(
     env: VecEnv,
     rng: np.random.Generator,
