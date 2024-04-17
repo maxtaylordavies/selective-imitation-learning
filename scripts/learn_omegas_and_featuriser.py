@@ -16,7 +16,7 @@ from PIL import Image
 
 from selective_imitation_learning.environments import FruitWorld, featurise
 from selective_imitation_learning.environments.fruitworld import expert_policy
-from selective_imitation_learning.data import MultiAgentTransitions
+from selective_imitation_learning.data import SplitMultiAgentTransitions
 from selective_imitation_learning.utils import (
     is_power,
     to_range,
@@ -80,7 +80,7 @@ def generate_expert_data(env, min_ts_per_agent):
                 ts_done += 1
                 pbar.update(1)
 
-    transitions = MultiAgentTransitions(
+    transitions = SplitMultiAgentTransitions(
         obs=jnp.array(obss),
         acts=jnp.array(acts),
         next_obs=jnp.array(next_obss),

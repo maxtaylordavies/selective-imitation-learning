@@ -15,7 +15,7 @@ from ..utils import load_policy
 
 
 @dataclasses.dataclass(frozen=True)
-class SplitMultiAgentTransitions(types.Transitions):
+class UnifiedSplitMultiAgentTransitions(types.Transitions):
     # array of agent indices - agent_idxs[i] is the index of the agent associated with transition i
     agent_idxs: jnp.ndarray
 

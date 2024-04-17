@@ -36,7 +36,7 @@ import jax.random as jr
 import optax
 
 from ..data import (
-    MultiAgentTransitions,
+    SplitMultiAgentTransitions,
     BCBatchLoader,
     generate_demonstrations,
     weight_agents_uniform,
@@ -168,7 +168,7 @@ class BCLossCalculator:
 
 @dataclasses.dataclass(frozen=True)
 class OmegasLossCalculator:
-    sample_fn: Callable[[], MultiAgentTransitions]
+    sample_fn: Callable[[], SplitMultiAgentTransitions]
     featurise_fn: FeaturisingFn
 
     def __call__(
@@ -187,7 +187,7 @@ class SelectiveBC(algo_base.DemonstrationAlgorithm):
         action_space: gym.Space,
         rng: np.random.Generator,
         batch_size: int = 64,
-        demonstrations: MultiAgentTransitions,
+        demonstrations: SplitMultiAgentTransitions,
         featuriser: FeaturisingFn,
         weighting_fn: WeightingFn,
         omegas_self: jax.Array,
@@ -281,7 +281,7 @@ class SelectiveBC(algo_base.DemonstrationAlgorithm):
             featuriser,
         )
 
-    def set_demonstrations(self, demonstrations: MultiAgentTransitions) -> None:
+    def set_demonstrations(self, demonstrations: SplitMultiAgentTransitions) -> None:
         self.batch_loader = BCBatchLoader(demonstrations, self.batch_size)
 
     @property
@@ -320,7 +320,7 @@ class SelectiveBC(algo_base.DemonstrationAlgorithm):
 
         for batch_idx in tqdm(range(n_batches)):
             # sample batch
-            batch: MultiAgentTransitions = self.batch_loader.sample_batch(
+            batch: SplitMultiAgentTransitions = self.batch_loader.sample_batch(
                 self.demonstrator_weights
             )
 
@@ -354,7 +354,7 @@ def train_bc_agent(
     run_name: str,
     env_id: str,
     env_kwargs: Dict,
-    demonstrations: MultiAgentTransitions,
+    demonstrations: SplitMultiAgentTransitions,
     featuriser: FeaturisingFn,
     omegas_self: jax.Array,
     weight_fn: WeightingFn = weight_agents_uniform,
