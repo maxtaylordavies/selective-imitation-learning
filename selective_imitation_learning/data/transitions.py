@@ -93,11 +93,10 @@ def generate_data(
         obs, _ = env.reset(seed=seed + timesteps)
         done = False
         while not done:
-            obss.append(obs)
-
             act = policy_func(obs, **policy_func_kwargs)
             next_obs, _, done, _, info = env.step(act)
 
+            obss.append(obs)
             acts.append(act)
             next_obss.append(next_obs)
             dones.append(done)

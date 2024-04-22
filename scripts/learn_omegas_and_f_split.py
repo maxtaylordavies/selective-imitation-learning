@@ -39,7 +39,6 @@ env_kwargs = {
     "grid_size": 7,
     "num_fruit": 3,
     "fruit_prefs": fruit_prefs[0],
-    # "fruit_loc_means": np.array([[0, 0], [0, 6], [6, 3]]),
     "fruit_loc_means": np.array([[3, 3], [3, 3], [3, 3]]),
     "fruit_loc_stds": 1 * np.ones(3),
     "max_steps": 50,
@@ -60,13 +59,10 @@ def featurise(obs: jnp.ndarray) -> jnp.ndarray:
 def transition_ll(delta_f, omegas, a):
     # higher is better
     delta_f = to_simplex(delta_f)
-    ll = delta_f @ omegas[a]
-    tmp = jnp.dot(omegas, omegas.T)
-    o_penalty = tmp.sum() - jnp.trace(tmp)
-    return ll - (0.1 * o_penalty)
-    # ll = 2 * (to_simplex(delta_f) @ to_simplex(omegas[a]))
+    return delta_f @ omegas[a]
+    # ll = to_simplex(delta_f) @ omegas[a]
     # for i in range(3):
-    #     ll -= to_simplex(delta_f) @ to_simplex(omegas[i])
+    #     ll -= 0.1 * (to_simplex(delta_f) @ omegas[i])
     # return ll
 
 
@@ -75,11 +71,15 @@ def loss_fn(f, omegas, obss, next_obss, a_idxs):
     fs = jax.vmap(f)(obss)
     f_nexts = jax.vmap(f)(next_obss)
     delta_fs = f_nexts - fs
-    return -jnp.sum(
-        jax.vmap(transition_ll, in_axes=(0, None, 0))(
-            delta_fs, jnp.array([to_simplex(omegas[a]) for a in range(3)]), a_idxs
-        )
-    )
+
+    _omegas = jnp.array([to_simplex(omegas[a]) for a in range(3)])
+    lls = jax.vmap(transition_ll, in_axes=(0, None, 0))(delta_fs, _omegas, a_idxs)
+
+    tmp = jnp.dot(_omegas, _omegas.T)
+    o_penalty = tmp.sum() - jnp.trace(tmp)
+    o_penalty *= 0.1 * len(lls)
+
+    return -jnp.sum(lls) + o_penalty
 
 
 def sample_episodes(key, transitions, n, ep_len=50):
