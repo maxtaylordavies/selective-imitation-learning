@@ -2,6 +2,7 @@ import io
 
 from PIL import Image
 import jax.numpy as jnp
+import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.save_util import save_to_zip_file, load_from_zip_file
@@ -20,6 +21,16 @@ def to_range(a: jnp.ndarray, low, high) -> jnp.ndarray:
 def to_simplex(a: jnp.ndarray) -> jnp.ndarray:
     a = a - a.min() + 1e-8
     return a / a.sum()
+
+
+def boltzmann(vals: jnp.ndarray, beta: float) -> jnp.ndarray:
+    p = jnp.exp(vals / beta)
+    return p / p.sum()
+
+
+def boltzmann_np(vals: np.ndarray, beta: float) -> np.ndarray:
+    p = np.exp(vals / beta)
+    return p / p.sum()
 
 
 def cosine_sim(a: jnp.ndarray, b: jnp.ndarray) -> float:

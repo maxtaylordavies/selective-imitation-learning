@@ -7,9 +7,10 @@ import jax.random as jr
 import numpy as np
 from numpy.typing import NDArray
 import pygame
+import pygame.freetype
 
 from selective_imitation_learning.constants import ENV_CONSTANTS
-from selective_imitation_learning.utils import manhattan_dist, to_simplex
+from selective_imitation_learning.utils import manhattan_dist, to_simplex, boltzmann_np
 from .utils import Position, GridActions, delta_x_actions, delta_y_actions
 
 ObsType = NDArray[np.float32]
@@ -63,6 +64,7 @@ class MultiAgentFruitWorld(gym.Env):
         self.render_mode = render_mode
         self.window = None
         self.clock = None
+        self.font = None
 
         self._init_fruit_distributions()
 
@@ -90,6 +92,9 @@ class MultiAgentFruitWorld(gym.Env):
         self.action_space = gym.spaces.MultiDiscrete(
             len(GridActions) * np.ones(self.num_agents, dtype=int)
         )
+
+        if self.render_mode:
+            pygame.init()
 
     def _init_fruit_distributions(self):
         self.fruit_probs = {}
@@ -248,6 +253,9 @@ class MultiAgentFruitWorld(gym.Env):
             if self.clock is None:
                 self.clock = pygame.time.Clock()
 
+            if self.font is None:
+                self.font = pygame.freetype.SysFont("Helvetica", 24, bold=True)
+
             obs = self._get_obs(norm=False)
             agent_map = obs[0].T
             fruit_map = obs[1].T
@@ -262,11 +270,21 @@ class MultiAgentFruitWorld(gym.Env):
                         2,
                     )
                     if agent_map[i, j] > 0:
+                        # draw square for agent
                         pygame.draw.rect(
                             self.window,
-                            ENV_CONSTANTS["agent_colours"][int(agent_map[i, j] - 1)],
+                            (66, 66, 66),
                             (i * 50, j * 50, 50, 50),
                         )
+                        # draw agent number in middle of square
+                        # self.font is set already
+                        self.font.render_to(
+                            self.window,
+                            (i * 50 + 20, j * 50 + 20),
+                            str(int(agent_map[i, j])),
+                            (255, 255, 255),
+                        )
+
                     elif fruit_map[i, j] > 0:
                         pygame.draw.circle(
                             self.window,
@@ -285,21 +303,29 @@ class MultiAgentFruitWorld(gym.Env):
         pass
 
 
-def expert_policy(obs: ObsType, fruit_prefs: NDArray) -> ActionType:
+def expert_policy(obs: ObsType, fruit_prefs: NDArray, beta=0.5, c=0.1) -> ActionType:
     M = len(fruit_prefs)  # number of agents
-    actions = np.array([GridActions.no_op] * M)
     agent_map, fruit_map = obs[0], obs[1]
 
-    for m in range(M):
-        target = np.argmax(fruit_prefs[m]) + 1
-        own_pos = np.array(
-            np.unravel_index(np.argmax(agent_map == m + 1), agent_map.shape)
-        )
-        target_pos = np.array(
-            np.unravel_index(np.argmax(fruit_map == target), fruit_map.shape)
-        )
-        delta_x, delta_y = np.sign(target_pos - own_pos)
-        poss_actions = delta_x_actions[delta_x] + delta_y_actions[delta_y]
-        actions[m] = np.random.choice(poss_actions or list(GridActions))
+    def get_loc(_map, val):
+        return np.array(np.unravel_index(np.argmax(_map == val), _map.shape))
 
-    return np.array(actions)
+    def choose_action(m):
+        # compute current value of each fruit based on preferences and distance
+        own_loc = get_loc(agent_map, m + 1)
+        fruit_locs = np.array(
+            [get_loc(fruit_map, f + 1) for f in range(len(fruit_prefs[m]))]
+        )
+        dists = np.sum(np.abs(fruit_locs - own_loc), axis=1)
+        vals = fruit_prefs[m] - c * dists
+
+        # pick a fruit to move towards using a boltzmann dist
+        probs = boltzmann_np(vals, beta)
+        target = np.random.choice(len(fruit_prefs[m]), p=probs)
+
+        # pick any action that moves towards the target fruit
+        delta_x, delta_y = np.sign(fruit_locs[target] - own_loc)
+        poss_actions = delta_x_actions[delta_x] + delta_y_actions[delta_y]
+        return np.random.choice(poss_actions or list(GridActions))
+
+    return np.array([choose_action(m) for m in range(M)])

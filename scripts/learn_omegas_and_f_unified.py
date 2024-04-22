@@ -39,7 +39,7 @@ env_kwargs = {
     "num_fruit": 3,
     "fruit_prefs": fruit_prefs,
     "fruit_loc_means": np.array([[3, 3], [3, 3], [3, 3]]),
-    "fruit_loc_stds": 1 * np.ones(3),
+    "fruit_loc_stds": 2 * np.ones(3),
     "max_steps": 50,
     "render_mode": "human",
 }
@@ -262,6 +262,20 @@ def train(
 
     loss_ts, losses, eval_ts, evals, vis_frames = [], [], [], [], []
     keys = jr.split(key, n_iter)
+
+    # initial visualisation
+    fig, _ = visualise_training_progress(
+        p_func,
+        f_func,
+        omegas,
+        test_data,
+        (loss_ts, losses),
+        (eval_ts, evals),
+        title="Initial",
+    )
+    fig.savefig("initial.svg")
+
+    # main training loop
     for i in tqdm(range(n_iter)):
         batch_idxs = jr.randint(keys[i], (batch_size,), 0, len(train_data))
         batch = train_data[batch_idxs]
@@ -299,6 +313,18 @@ def train(
             batch.obs,
             batch.next_obs,
         )
+
+    # final visualisation
+    fig, _ = visualise_training_progress(
+        p_func,
+        f_func,
+        omegas,
+        test_data,
+        (loss_ts, losses),
+        (eval_ts, evals),
+        title="Initial",
+    )
+    fig.savefig("final.svg")
 
     return f_func, omegas, losses, evals, vis_frames
 
@@ -349,8 +375,8 @@ featuriser, omegas, losses, evals, vis_frames = train(
     omegas,
     train_data,
     test_data,
-    n_iter=int(5e4),
-    batch_size=int(2e3),
+    n_iter=int(1e4),
+    batch_size=int(1e4),
     log_interval=100,
     eval_interval=200,
     visualise_interval=200,
