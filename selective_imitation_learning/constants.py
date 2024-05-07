@@ -4,11 +4,6 @@ ENV_CONSTANTS = {
         (0, 204, 150),
         (99, 110, 250),
     ],
-    "agent_colours": [
-        (239, 85, 59),
-        (0, 204, 150),
-        (99, 110, 250),
-    ],
 }
 
 PPO_DEFAULT_HYPERPARAMS = {

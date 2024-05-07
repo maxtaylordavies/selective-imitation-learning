@@ -16,6 +16,13 @@ from .utils import Position, GridActions, delta_x_actions, delta_y_actions
 ObsType = NDArray[np.float32]
 ActionType = NDArray[np.int8]
 
+FRUIT_FEATURES_MAP = {
+    0: [0, 0],  # red, circle
+    1: [0, 1],  # red, square
+    2: [1, 0],  # green, circle
+    3: [1, 1],  # green, square
+}
+
 
 class MultiAgentFruitWorldRiver(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
@@ -31,10 +38,9 @@ class MultiAgentFruitWorldRiver(gym.Env):
         num_fruit: int,
         fruit_prefs: NDArray,
         agent_sides: List,
+        fruit_sides: List,
         fruit_types_deterministic: bool = True,
         fruit_type_probs: Optional[NDArray] = None,
-        fruit_loc_means: Optional[NDArray] = None,
-        fruit_loc_stds: Optional[NDArray] = None,
         base_fruit_reward: float = 10.0,
         step_cost: float = 0.5,
         max_steps: int = 10,
@@ -55,10 +61,9 @@ class MultiAgentFruitWorldRiver(gym.Env):
         self.num_fruit = num_fruit
         self.fruit_prefs = fruit_prefs
         self.agent_sides = agent_sides
+        self.fruit_sides = fruit_sides
         self.fruit_types_deterministic = fruit_types_deterministic
         self.fruit_type_probs = fruit_type_probs
-        self.fruit_loc_means = fruit_loc_means
-        self.fruit_loc_stds = fruit_loc_stds
         self.base_fruit_reward = base_fruit_reward
         self.step_cost = step_cost
         self.max_steps = max_steps
@@ -99,25 +104,10 @@ class MultiAgentFruitWorldRiver(gym.Env):
 
     def _init_fruit_distributions(self):
         self.fruit_probs = {}
-
-        row_idxs, col_idxs = np.indices((self.grid_size, self.grid_size))
-        coords = np.column_stack((row_idxs.ravel(), col_idxs.ravel()))
-
-        if not self.fruit_types_deterministic and self.fruit_type_probs is None:
-            self.fruit_type_probs = np.ones(self.num_fruit_types) / self.num_fruit_types
-
-        if self.fruit_loc_means is None:
-            self.fruit_loc_means = np.ones((self.num_fruit_types, 2))
-            self.fruit_loc_means *= self.grid_size // 2
-
-        if self.fruit_loc_stds is None:
-            self.fruit_loc_stds = np.ones(self.num_fruit_types)
-            self.fruit_loc_stds *= self.grid_size // 4
-
-        for i in range(self.num_fruit_types):
-            sq_dists = np.sum((coords - self.fruit_loc_means[i]) ** 2, axis=1)
-            self.fruit_probs[i] = np.exp(-sq_dists / (2 * self.fruit_loc_stds[i] ** 2))
-            self.fruit_probs[i] /= self.fruit_probs[i].sum()
+        for fruit_type, side in enumerate(self.fruit_sides):
+            probs = np.zeros((self.grid_size, self.grid_size), dtype=np.float32)
+            probs[self.tile_locs[side][:, 1], self.tile_locs[side][:, 0]] = 1
+            self.fruit_probs[fruit_type] = probs / probs.sum()
 
     def reset(
         self,
@@ -226,19 +216,19 @@ class MultiAgentFruitWorldRiver(gym.Env):
 
         # then sample locations for each fruit type
         for fruit_type, count in enumerate(fruit_counts):
-            # get distribution for this fruit type
             probs = self.fruit_probs[fruit_type].copy()
 
             # set probabilities of occupied locations to 0
             occ_rows, occ_cols = np.where(self.terrain_map + self.fruit_map > 0)
-            probs[occ_rows * self.grid_size + occ_cols] = 0
+            probs[occ_rows, occ_cols] = 0
             for agent_pos in self.agent_positions:
                 r, c = agent_pos.to_np_idx()
-                probs[r * self.grid_size + c] = 0
+                probs[r, c] = 0
 
             # sample locations
+            probs = probs.reshape(-1) / probs.sum()
             idxs = self._np_random.choice(
-                self.grid_size**2, size=count, p=probs / probs.sum(), replace=False
+                self.grid_size**2, size=count, p=probs, replace=False
             )
             self.fruit_map[np.unravel_index(idxs, (self.grid_size, self.grid_size))] = (
                 fruit_type + 1
@@ -316,12 +306,23 @@ class MultiAgentFruitWorldRiver(gym.Env):
                     )
 
                 elif fruit_map[i, j] > 0:
-                    pygame.draw.circle(
-                        self.window,
-                        ENV_CONSTANTS["fruit_colours"][int(fruit_map[i, j] - 1)],
-                        (i * 50 + 25, j * 50 + 25),
-                        15,
-                    )
+                    fruit = int(fruit_map[i, j] - 1)
+                    features = FRUIT_FEATURES_MAP[fruit]
+                    color = ENV_CONSTANTS["fruit_colours"][features[0]]
+
+                    if features[1] == 0:  # circle
+                        pygame.draw.circle(
+                            self.window,
+                            color,
+                            (i * 50 + 25, j * 50 + 25),
+                            15,
+                        )
+                    else:  # square
+                        pygame.draw.rect(
+                            self.window,
+                            color,
+                            (i * 50 + 10, j * 50 + 10, 30, 30),
+                        )
 
         pygame.display.flip()
         self.clock.tick(10)
