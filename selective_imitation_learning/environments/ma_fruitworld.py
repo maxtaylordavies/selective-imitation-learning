@@ -244,60 +244,63 @@ class MultiAgentFruitWorld(gym.Env):
         return (obs - obs.min()) / (obs.max() - obs.min())
 
     def _render_frame(self):
-        if self.render_mode == "human":
-            if self.window is None:
-                self.window = pygame.display.set_mode(
-                    (self.grid_size * 50, self.grid_size * 50)
+        if self.render_mode != "human":
+            return
+
+        if self.window is None:
+            self.window = pygame.display.set_mode(
+                (self.grid_size * 50, self.grid_size * 50)
+            )
+
+        if self.clock is None:
+            self.clock = pygame.time.Clock()
+
+        if self.font is None:
+            self.font = pygame.freetype.SysFont("Helvetica", 24, bold=True)
+
+        obs = self._get_obs(norm=False)
+        agent_map = obs[0].T
+        fruit_map = obs[1].T
+
+        self.window.fill((255, 255, 255))
+        for i in range(self.grid_size):
+            for j in range(self.grid_size):
+                pygame.draw.rect(
+                    self.window,
+                    (160, 160, 160),
+                    (i * 50, j * 50, 50, 50),
+                    2,
                 )
-
-            if self.clock is None:
-                self.clock = pygame.time.Clock()
-
-            if self.font is None:
-                self.font = pygame.freetype.SysFont("Helvetica", 24, bold=True)
-
-            obs = self._get_obs(norm=False)
-            agent_map = obs[0].T
-            fruit_map = obs[1].T
-
-            self.window.fill((255, 255, 255))
-            for i in range(self.grid_size):
-                for j in range(self.grid_size):
+                if agent_map[i, j] > 0:
+                    # draw square for agent
                     pygame.draw.rect(
                         self.window,
-                        (160, 160, 160),
+                        (66, 66, 66),
                         (i * 50, j * 50, 50, 50),
-                        2,
                     )
-                    if agent_map[i, j] > 0:
-                        # draw square for agent
-                        pygame.draw.rect(
-                            self.window,
-                            (66, 66, 66),
-                            (i * 50, j * 50, 50, 50),
-                        )
-                        # draw agent number in middle of square
-                        # self.font is set already
-                        self.font.render_to(
-                            self.window,
-                            (i * 50 + 20, j * 50 + 20),
-                            str(int(agent_map[i, j])),
-                            (255, 255, 255),
-                        )
+                    # draw agent number in middle of square
+                    # self.font is set already
+                    self.font.render_to(
+                        self.window,
+                        (i * 50 + 20, j * 50 + 20),
+                        str(int(agent_map[i, j])),
+                        (255, 255, 255),
+                    )
 
-                    elif fruit_map[i, j] > 0:
-                        pygame.draw.circle(
-                            self.window,
-                            ENV_CONSTANTS["fruit_colours"][int(fruit_map[i, j] - 1)],
-                            (i * 50 + 25, j * 50 + 25),
-                            20,
-                        )
+                elif fruit_map[i, j] > 0:
+                    pygame.draw.circle(
+                        self.window,
+                        ENV_CONSTANTS["fruit_colours"][int(fruit_map[i, j] - 1)],
+                        (i * 50 + 25, j * 50 + 25),
+                        20,
+                    )
 
-            pygame.display.flip()
-            self.clock.tick(10)
+        pygame.display.flip()
+        self.clock.tick(10)
+        return self.window.copy()
 
     def render(self):
-        self._render_frame()
+        return self._render_frame()
 
     def close(self):
         pass
