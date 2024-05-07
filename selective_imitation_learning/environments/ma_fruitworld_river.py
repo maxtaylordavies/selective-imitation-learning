@@ -30,6 +30,7 @@ class MultiAgentFruitWorldRiver(gym.Env):
         grid_size: int,
         num_fruit: int,
         fruit_prefs: NDArray,
+        agent_sides: List,
         fruit_types_deterministic: bool = True,
         fruit_type_probs: Optional[NDArray] = None,
         fruit_loc_means: Optional[NDArray] = None,
@@ -43,6 +44,9 @@ class MultiAgentFruitWorldRiver(gym.Env):
         assert num_fruit > 0, "Number of fruits per type must be positive"
         assert max_steps > 0, "Maximum number of steps must be positive"
         assert len(fruit_prefs) > 0, "Fruit preference vector must be non-empty"
+        assert len(agent_sides) == len(
+            fruit_prefs
+        ), "Number of agents must match number of fruit preferences"
         assert num_fruit < grid_size**2, "Number of fruits cells exceeds grid size"
 
         self.grid_size = grid_size
@@ -50,6 +54,7 @@ class MultiAgentFruitWorldRiver(gym.Env):
         self.num_fruit_types = fruit_prefs.shape[1]
         self.num_fruit = num_fruit
         self.fruit_prefs = fruit_prefs
+        self.agent_sides = agent_sides
         self.fruit_types_deterministic = fruit_types_deterministic
         self.fruit_type_probs = fruit_type_probs
         self.fruit_loc_means = fruit_loc_means
@@ -62,16 +67,16 @@ class MultiAgentFruitWorldRiver(gym.Env):
         self.clock = None
         self.font = None
 
-        self._init_fruit_distributions()
-
-        self.agent_start_positions = np.array(
-            [
-                Position(1, 1),
-                Position(1, self.grid_size - 2),
-                Position(self.grid_size - 2, 1),
-                Position(self.grid_size - 2, self.grid_size - 2),
-            ]
+        # compute the locations of all tiles south and north of the river respectively
+        # (river runs along the diagonal from top left to bottom right)
+        all_tiles = np.array(
+            [(i, j) for i in range(grid_size) for j in range(grid_size)]
         )
+        south_tiles = all_tiles[all_tiles[:, 0] < all_tiles[:, 1]]
+        north_tiles = all_tiles[all_tiles[:, 0] > all_tiles[:, 1]]
+        self.tile_locs = {"south": south_tiles, "north": north_tiles}
+
+        self._init_fruit_distributions()
 
         # Define observation and action spaces
         #   - Observation space is a 2D grid with 3 channels -
@@ -183,7 +188,6 @@ class MultiAgentFruitWorldRiver(gym.Env):
 
         # do not allow agent to move into water
         if self.terrain_map[new_pos.y, new_pos.x] > 0:
-            print("water")
             return cur_pos
 
         # do not allow agent to move into tile occupied by another agent
@@ -200,11 +204,11 @@ class MultiAgentFruitWorldRiver(gym.Env):
         return new_positions
 
     def _place_agents(self):
-        self.agent_positions = self._np_random.choice(
-            self.agent_start_positions,
-            size=self.num_agents,
-            replace=False,
-        ).tolist()
+        aps = []
+        for m, side in enumerate(self.agent_sides):
+            idx = self._np_random.choice(len(self.tile_locs[side]))
+            aps.append(Position(*self.tile_locs[side][idx]))
+        self.agent_positions = aps
 
     def _place_fruit(self, n, fruit_type=None):
         # first split n between fruit types
